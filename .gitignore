@@ -21,6 +21,7 @@ dist/
 build/
 out/
 remotion/out/
+*.tsbuildinfo
 
 # Rendered / generated media (large binaries, never committed)
 services/**/tmp/

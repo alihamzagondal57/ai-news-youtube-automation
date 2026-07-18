@@ -1,0 +1,25 @@
+{
+  "name": "@ai-news/render-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-news/shared": "*",
+    "@remotion/bundler": "^4.0.190",
+    "@remotion/renderer": "^4.0.190",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.13",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4"
+  }
+}

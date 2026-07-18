@@ -1,0 +1,24 @@
+{
+  "name": "@ai-news/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "fixture": "node sample-job/generate-fixture-audio.mjs",
+    "preview": "npm run fixture && remotion studio src/index.ts",
+    "render": "npm run fixture && remotion render src/index.ts NewsVideo out/render.mp4",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.190",
+    "@remotion/media-utils": "^4.0.190",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.190",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}

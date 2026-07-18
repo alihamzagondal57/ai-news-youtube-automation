@@ -11,10 +11,44 @@ jobs:
   trigger-render:
     runs-on: ubuntu-latest
     steps:
-      # This job does NOT render anything itself — 4K Remotion rendering runs on the
-      # Oracle Cloud VM (infra/render-server), not on a GitHub-hosted runner.
-      # It just kicks off the render and lets render-server call back n8n when done.
-      - name: Trigger render on Oracle Cloud VM
+      # This job does NOT render anything itself — 4K Remotion rendering runs on a
+      # Google Compute Engine VM (infra/render-server), not on a GitHub-hosted runner.
+      # The VM is stopped between jobs to save cost, so: start it, wait for
+      # render-server to come up, kick off the render, then let render-server's
+      # own async callback to n8n (and self-shutdown) take it from there.
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Start render VM
+        run: |
+          gcloud compute instances start "$GCP_INSTANCE_NAME" --zone="$GCP_ZONE" --quiet
+        env:
+          GCP_INSTANCE_NAME: ${{ secrets.GCP_INSTANCE_NAME }}
+          GCP_ZONE: ${{ secrets.GCP_ZONE }}
+
+      - name: Wait for render-server to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "$RENDER_SERVER_URL/health" >/dev/null; then
+              echo "render-server is up"
+              exit 0
+            fi
+            echo "Waiting for render-server ($i/30)..."
+            sleep 10
+          done
+          echo "render-server did not become ready in time" >&2
+          exit 1
+        env:
+          RENDER_SERVER_URL: ${{ secrets.RENDER_SERVER_URL }}
+
+      - name: Trigger render
         run: |
           curl -sf -X POST "$RENDER_SERVER_URL/render" \
             -H "Authorization: Bearer $RENDER_SERVER_SHARED_SECRET" \
