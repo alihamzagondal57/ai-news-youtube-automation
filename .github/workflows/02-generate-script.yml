@@ -1,0 +1,31 @@
+name: 02 - Generate Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobId:
+        description: Pipeline job ID (UUID)
+        required: true
+
+jobs:
+  script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install --workspace=services/script-generator
+      # TODO(remotion-pipeline-followup): implement services/script-generator/src/index.ts
+      - name: Generate script
+        working-directory: services/script-generator
+        run: npm run start -- --jobId "${{ inputs.jobId }}"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}

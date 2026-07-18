@@ -1,0 +1,28 @@
+name: 03 - Generate Voiceover
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobId:
+        description: Pipeline job ID (UUID)
+        required: true
+
+jobs:
+  voiceover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r services/voiceover/requirements.txt
+      # TODO(remotion-pipeline-followup): implement services/voiceover/src/main.py
+      - name: Generate voiceover
+        working-directory: services/voiceover
+        run: python -m src.main --job-id "${{ inputs.jobId }}"
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}

@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+client_secret*.json
+youtube-token*.json
+
+# Build output
+dist/
+build/
+out/
+remotion/out/
+
+# Rendered / generated media (large binaries, never committed)
+services/**/tmp/
+services/**/output/
+media-cache/
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.png
+*.jpg
+*.jpeg
+!assets/**
+!docs/**/*.png
+
+# Whisper / model caches
+*.pt
+*.onnx
+models/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Terraform
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.backup
+infra/**/*.tfvars
+
+# n8n local runtime data (not the exported workflow JSON we track)
+n8n/.n8n/

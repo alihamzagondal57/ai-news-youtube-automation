@@ -1,0 +1,14 @@
+{
+  "extends": "../default.config.json",
+  "niche": "news-europe",
+  "topics": ["world", "business", "technology", "politics", "climate"],
+  "tone": "neutral-broadcast",
+  "musicMoods": ["breaking-news", "investigative", "human-interest", "corporate-serious"],
+  "tickerHeadlineCount": 6,
+  "excludeSources": [],
+  "safetyRules": [
+    "No unverified claims presented as fact",
+    "No graphic violence in sourced footage",
+    "Attribute all statistics to sourceUrls from trend.json"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "video": {
+    "minDurationSeconds": 300,
+    "maxDurationSeconds": 1200,
+    "resolution": { "width": 3840, "height": 2160 },
+    "fps": 30
+  },
+  "audience": {
+    "region": "Europe",
+    "language": "en-GB"
+  },
+  "voice": {
+    "provider": "edge-tts",
+    "voiceId": "en-GB-RyanNeural"
+  },
+  "caption": {
+    "provider": "whisper",
+    "model": "medium",
+    "style": "word-highlight"
+  },
+  "media": {
+    "providers": ["pexels", "pixabay"],
+    "licenseRequired": "free-commercial-no-attribution"
+  },
+  "youtube": {
+    "defaultPrivacyStatus": "private",
+    "categoryId": "25"
+  }
+}

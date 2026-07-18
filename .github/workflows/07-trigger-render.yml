@@ -1,0 +1,25 @@
+name: 07 - Trigger Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobId:
+        description: Pipeline job ID (UUID)
+        required: true
+
+jobs:
+  trigger-render:
+    runs-on: ubuntu-latest
+    steps:
+      # This job does NOT render anything itself — 4K Remotion rendering runs on the
+      # Oracle Cloud VM (infra/render-server), not on a GitHub-hosted runner.
+      # It just kicks off the render and lets render-server call back n8n when done.
+      - name: Trigger render on Oracle Cloud VM
+        run: |
+          curl -sf -X POST "$RENDER_SERVER_URL/render" \
+            -H "Authorization: Bearer $RENDER_SERVER_SHARED_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"jobId\": \"${{ inputs.jobId }}\"}"
+        env:
+          RENDER_SERVER_URL: ${{ secrets.RENDER_SERVER_URL }}
+          RENDER_SERVER_SHARED_SECRET: ${{ secrets.RENDER_SERVER_SHARED_SECRET }}
