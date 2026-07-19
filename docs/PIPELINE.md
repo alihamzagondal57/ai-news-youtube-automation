@@ -18,7 +18,10 @@ jobs/{jobId}/
 ├── metadata.json            # from metadata-generator (incl. containsSyntheticMedia disclosure flag)
 ├── thumbnail.png             # from metadata-generator
 ├── render.mp4                # from remotion, via render-server
-├── renders/segment-*.mp4      # per-segment intermediate renders (cache for targeted re-renders)
+├── renders/                   # targeted-re-render cache: per-chunk video + the continuous audio track
+│   ├── segment-*.mp4          #   video-only chunks, one per segment
+│   ├── outro.mp4              #   video-only outro chunk
+│   └── audio.wav              #   full-timeline audio, rendered once and reused
 ├── review-state.json          # from review-dashboard: approval status, voice/style/clip choices
 └── youtube-result.json        # from youtube-uploader
 ```
@@ -39,7 +42,13 @@ Reusable style/voice presets live outside the per-job tree at `presets/{presetId
 The **review gate** (step 8) is where the pipeline stops for a human. The review dashboard reads `render.mp4` plus the upstream artifacts and lets the operator swap a clip, change the voice, or restyle the on-screen text, writing choices to `review-state.json`. n8n waits on `review-state.json.status` and only advances to `youtube-uploader` on `"approved"`. Full design: [`REVIEW-DASHBOARD.md`](REVIEW-DASHBOARD.md).
 
 ### Targeted re-render
-A clip swap changes exactly one segment, so re-encoding the whole 4K timeline is wasteful. render-server accepts an optional `segments: number[]` on the render request: it re-renders only those segments' frame ranges to `renders/segment-{id}.mp4` and stitches them with the unchanged cached segments via ffmpeg into a new `render.mp4`. A **voice** change instead alters every segment's timing (new TTS audio), so it re-runs `voiceover` → `caption-sync` → a **full** re-render. A **style-only** change re-renders from the same inputs with new style props.
+A clip swap changes one segment, so re-encoding the whole 4K timeline is wasteful. `POST /render` accepts an optional `changedSegmentIds: number[]`; render-server then rebuilds only the affected chunks and reuses the rest from the per-segment cache in `jobs/{jobId}/renders/`.
+
+**How A/V sync is preserved.** The timeline is partitioned into contiguous chunks (one per segment, plus the outro) that tile it exactly — a gap would drop frames and an overlap would duplicate them, either desyncing everything downstream, so the partition is validated as an invariant before anything renders. Each chunk is rendered **video-only** at absolute frame ranges, and the **audio is rendered once for the entire timeline and muxed on at the end**. Audio is never cut, re-encoded, or concatenated at a boundary, so stitching has no mechanism to introduce drift. Video chunks are joined with ffmpeg's concat demuxer using stream copy (no re-encode, no generation loss). Because Remotion renders absolute frame indices deterministically, frame *F* rendered inside a chunk is identical to frame *F* of a full render — which is what keeps burned-in captions locked to the voiceover.
+
+**Invalidation is wider than the changed segment.** The composition cross-fades segment backgrounds, mounting each one `TRANSITION_FRAMES` early and holding it that long past its end, so a swapped clip is already fading in during the *previous* segment's frames and still fading out during the *next* one's. Invalidation therefore covers `[startFrame - TRANSITION_FRAMES, endFrame + TRANSITION_FRAMES)` — exactly the `<Sequence>` mount window, which is a provable bound on what a segment can affect. In practice one clip swap re-renders three chunks. Re-rendering only the segment's own range leaves a stale clip visible in the crossfade; `.smoke-test/smoke-test-stitch.mts` asserts against that as an explicit negative control.
+
+A **voice** change instead alters every segment's timing (new TTS audio), so it re-runs `voiceover` → `caption-sync` → a **full** re-render — it must not be sent as `changedSegmentIds`. A **style-only** change re-renders from the same inputs with new style props.
 
 ### Synthetic-content disclosure
 `metadata.json` carries `containsSyntheticMedia` (defaults `true`). `youtube-uploader` maps it onto the video resource's `status.containsSyntheticMedia` field on `videos.insert`, satisfying YouTube's mandatory altered/synthetic-content disclosure (required since 2025-05-21). This is not optional for this pipeline — every video qualifies (synthetic voice + AI-written script).

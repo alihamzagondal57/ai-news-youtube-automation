@@ -143,6 +143,15 @@ export type Metadata = z.infer<typeof metadataSchema>;
 /** POST /render request body, handled by infra/render-server */
 export const renderJobRequestSchema = z.object({
   jobId: z.string().uuid(),
+  /**
+   * Targeted re-render: only these segments' visuals changed (a clip swap from
+   * the review dashboard), so render-server rebuilds just the affected chunks
+   * and reuses the rest from its per-segment cache. Omit for a full render.
+   *
+   * Only valid for changes that don't move any segment's timing. A voice change
+   * re-times the whole video and must be sent as a full render instead.
+   */
+  changedSegmentIds: z.array(z.number().int().nonnegative()).optional(),
 });
 export type RenderJobRequest = z.infer<typeof renderJobRequestSchema>;
 

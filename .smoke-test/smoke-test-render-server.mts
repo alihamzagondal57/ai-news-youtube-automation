@@ -10,10 +10,16 @@
 // The only things stubbed vs. production are the HTTP layer (POST /render) and
 // the n8n callback; the R2 read/write path is real. Swap s3rver for real R2
 // credentials in .env and this same flow runs against Cloudflare unchanged.
-import { mkdtemp, copyFile, rm, stat, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, stat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import S3rver from "s3rver";
+import { generateColorClip, probeVideo } from "./lib/media.mts";
+
+function assert(condition: boolean, description: string): void {
+  if (!condition) throw new Error(`ASSERTION FAILED: ${description}`);
+  console.log(`  ok  ${description}`);
+}
 
 const REPO = "C:\\Users\\HP\\New folder";
 const S3_PORT = 4569;
@@ -79,14 +85,20 @@ const captions = {
   ],
 };
 
-// No clips (uses the composition's fallback background); music only, so the
-// download path pulls voiceover.wav + media/music.wav exactly as production does.
-const mediaManifest = {
-  jobId: JOB_ID,
-  clips: [],
-  music: { file: "music.wav", license: { source: "pixabay", licenseType: "free", url: "https://pixabay.com" } },
-  sfx: [],
-};
+const license = { source: "pixabay", licenseType: "free", url: "https://pixabay.com" } as const;
+
+/** Distinct per-segment clips so a swap is actually visible in the output. */
+function manifestWithClips(segment1Clip: string) {
+  return {
+    jobId: JOB_ID,
+    clips: [
+      { segmentId: 0, file: "clip-red.mp4", license },
+      { segmentId: 1, file: segment1Clip, license },
+    ],
+    music: { file: "music.wav", license },
+    sfx: [],
+  };
+}
 
 async function main() {
   const dataDir = await mkdtemp(join(tmpdir(), "s3rver-data-"));
@@ -109,7 +121,7 @@ async function main() {
     await store.putJson(store.jobKey(JOB_ID, "script.json"), script);
     await store.putJson(store.jobKey(JOB_ID, "segment-timing.json"), segmentTiming);
     await store.putJson(store.jobKey(JOB_ID, "captions.json"), captions);
-    await store.putJson(store.jobKey(JOB_ID, "media/media-manifest.json"), mediaManifest);
+    await store.putJson(store.jobKey(JOB_ID, "media/media-manifest.json"), manifestWithClips("clip-green.mp4"));
     await store.putFile(
       store.jobKey(JOB_ID, "voiceover.wav"),
       join(REPO, "remotion", "public", "sample", "voiceover.wav"),
@@ -120,6 +132,14 @@ async function main() {
       join(REPO, "remotion", "public", "sample", "music.wav"),
       "audio/wav",
     );
+
+    // Stock clips stand in for what media-sourcing would have fetched.
+    const clipDir = await mkdtemp(join(tmpdir(), "smoke-clips-"));
+    for (const color of ["red", "green", "blue"]) {
+      const local = join(clipDir, `clip-${color}.mp4`);
+      await generateColorClip(color, 7, 30, 640, 360, local);
+      await store.putFile(store.jobKey(JOB_ID, `media/clip-${color}.mp4`), local, "video/mp4");
+    }
     console.log("Uploaded job inputs to jobs/%s/ in the store", JOB_ID);
 
     // --- Run the real render-server pipeline: download -> render -> upload.
@@ -139,7 +159,43 @@ async function main() {
       throw new Error(`Downloaded render is suspiciously small: ${size} bytes`);
     }
     console.log(`Downloaded ${result.renderKey} back from the store -> ${localOut} (${size} bytes)`);
-    console.log("\nSMOKE TEST PASSED: full R2 upload -> render -> R2 download path verified.");
+
+    // --- The per-segment render cache must have been persisted to the store.
+    const cacheKeys = await store.listKeys(store.jobKey(JOB_ID, "renders/"));
+    const cacheNames = cacheKeys.map((k) => k.split("/").pop()).sort();
+    console.log("Render cache in store:", cacheNames.join(", "));
+    assert(cacheKeys.length > 0, "cold render persisted a per-segment chunk cache to the store");
+    assert(cacheNames.includes("audio.wav"), "continuous audio track cached for reuse");
+
+    const coldProbe = await probeVideo(localOut);
+
+    // --- Targeted re-render: swap segment 1's clip, rebuild only what's dirty.
+    console.log("\nTargeted re-render: swapping segment 1's clip (green -> blue)");
+    await store.putJson(store.jobKey(JOB_ID, "media/media-manifest.json"), manifestWithClips("clip-blue.mp4"));
+
+    const targeted = await runRender(store, JOB_ID, createLogger("smoke-test"), { changedSegmentIds: [1] });
+    if (targeted.status !== "completed" || !targeted.renderKey) {
+      throw new Error(`Targeted runRender did not complete: ${JSON.stringify(targeted)}`);
+    }
+
+    const targetedOut = join(outDir, "smoke-test-targeted-rerender.mp4");
+    await store.downloadToFile(targeted.renderKey, targetedOut);
+    const targetedProbe = await probeVideo(targetedOut);
+
+    assert(
+      targetedProbe.frameCount === coldProbe.frameCount,
+      `targeted re-render preserved frame count (${targetedProbe.frameCount} frames)`,
+    );
+    assert(
+      targetedProbe.audioDurationSeconds !== null &&
+        Math.abs(targetedProbe.audioDurationSeconds - targetedProbe.videoDurationSeconds) < 0.05,
+      `audio still in sync (audio ${targetedProbe.audioDurationSeconds}s vs video ${targetedProbe.videoDurationSeconds}s)`,
+    );
+
+    await rm(clipDir, { recursive: true, force: true });
+    console.log(
+      "\nSMOKE TEST PASSED: R2 upload -> render -> download, plus a cache-backed targeted re-render, all verified.",
+    );
   } finally {
     await server.close();
     await rm(dataDir, { recursive: true, force: true });

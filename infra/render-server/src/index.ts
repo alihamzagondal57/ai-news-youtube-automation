@@ -32,7 +32,7 @@ app.post("/render", requireSharedSecret, (req, res) => {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
-  const { jobId } = parsed.data;
+  const { jobId, changedSegmentIds } = parsed.data;
 
   if (jobStates.get(jobId)?.status === "running") {
     res.status(409).json({ error: "Job already rendering" });
@@ -43,17 +43,17 @@ app.post("/render", requireSharedSecret, (req, res) => {
   jobStates.set(jobId, { status: "running" });
   res.status(202).json({ jobId, status: "running" });
 
-  processJob(jobId).catch((err) => {
+  processJob(jobId, changedSegmentIds).catch((err) => {
     logger.error({ jobId, err }, "Unhandled error processing render job");
   });
 });
 
-async function processJob(jobId: string): Promise<void> {
+async function processJob(jobId: string, changedSegmentIds?: readonly number[]): Promise<void> {
   const jobLogger = logger.child({ jobId });
   let result: RenderResult;
   try {
     const store = JobStore.fromEnv();
-    result = await runRender(store, jobId, jobLogger);
+    result = await runRender(store, jobId, jobLogger, { changedSegmentIds });
     jobStates.set(jobId, { status: "completed", result });
     jobLogger.info("Job completed");
   } catch (err) {

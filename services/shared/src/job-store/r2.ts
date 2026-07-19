@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
@@ -113,6 +114,25 @@ export class JobStore {
         ContentType: contentType,
       }),
     );
+  }
+
+  /**
+   * Every key under a prefix, following pagination. Used by render-server to
+   * discover which per-segment render chunks are already cached for a job.
+   */
+  async listKeys(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const response = await this.s3.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: continuationToken }),
+      );
+      for (const item of response.Contents ?? []) {
+        if (item.Key) keys.push(item.Key);
+      }
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return keys;
   }
 
   /** Downloads an R2 object to a local file, creating parent directories as needed. */

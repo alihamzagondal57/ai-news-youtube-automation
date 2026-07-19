@@ -110,9 +110,11 @@ needs just a re-render — no upstream re-gen.
 
 ## What this requires elsewhere (build-order notes)
 
-- **render-server** gains (a) a `segments?: number[]` field on the render request
-  for targeted re-renders + a per-segment render cache and ffmpeg stitch step, and
-  (b) reading `review-state.json` to apply `voiceId`/`style`/`clipOverrides`.
+- **render-server**: targeted re-render is **implemented** — `changedSegmentIds`
+  on the render request, a per-segment chunk cache in `jobs/{jobId}/renders/`,
+  and an ffmpeg stitch step (see "Targeted re-render" in
+  [`docs/PIPELINE.md`](PIPELINE.md)). Still to do: reading `review-state.json` to
+  apply `voiceId`/`style`/`clipOverrides` instead of taking them as call args.
 - **The Remotion composition** must accept the style props from `renderStyleSchema`
   and fall back to channel defaults.
 - **media-sourcing** gains an "alternatives" mode returning N candidates for a

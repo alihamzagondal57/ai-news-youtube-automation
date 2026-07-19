@@ -23,9 +23,11 @@
   },
   "license": "UNLICENSED",
   "allowScripts": {
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "ffmpeg-static@5.3.0": true
   },
   "devDependencies": {
+    "ffprobe-static": "^3.1.0",
     "s3rver": "^3.7.1"
   }
 }
