@@ -12,6 +12,10 @@ export const pipelineStepSchema = z.enum([
   "media-sourcing",
   "metadata-generator",
   "render",
+  // Human-in-the-loop approval gate between render and upload (see
+  // docs/REVIEW-DASHBOARD.md). The pipeline parks here until review-state.json
+  // reaches an "approved" status.
+  "review",
   "youtube-uploader",
 ]);
 export type PipelineStep = z.infer<typeof pipelineStepSchema>;
@@ -126,6 +130,13 @@ export const metadataSchema = z.object({
   tags: z.array(z.string()).max(500),
   hashtags: z.array(z.string()).max(15),
   chapters: z.array(chapterSchema),
+  /**
+   * YouTube "altered or synthetic content" disclosure. Every video this pipeline
+   * makes uses a synthetic voice and an AI-written script, so this defaults to
+   * true; youtube-uploader maps it onto the video resource's
+   * status.containsSyntheticMedia field (mandatory disclosure since 2025-05-21).
+   */
+  containsSyntheticMedia: z.boolean().default(true),
 });
 export type Metadata = z.infer<typeof metadataSchema>;
 
@@ -153,3 +164,87 @@ export const youtubeResultSchema = z.object({
   quotaUnitsUsed: z.number().nonnegative(),
 });
 export type YoutubeResult = z.infer<typeof youtubeResultSchema>;
+
+// ── Review layer (docs/REVIEW-DASHBOARD.md) ──────────────────────────────────
+
+/**
+ * User-configurable on-screen text styling, applied at render time. All fields
+ * optional — the Remotion composition falls back to the channel default for
+ * anything unset, so an empty object renders exactly as the current pipeline does.
+ */
+export const renderStyleSchema = z.object({
+  captions: z
+    .object({
+      fontFamily: z.string(),
+      fontSizePx: z.number().positive(),
+      color: z.string(),
+      highlightColor: z.string(),
+    })
+    .partial()
+    .optional(),
+  ticker: z
+    .object({
+      backgroundColor: z.string(),
+      textColor: z.string(),
+      speedPxPerSecond: z.number().positive(),
+    })
+    .partial()
+    .optional(),
+  lowerThird: z
+    .object({
+      backgroundColor: z.string(),
+      textColor: z.string(),
+      accentColor: z.string(),
+    })
+    .partial()
+    .optional(),
+});
+export type RenderStyle = z.infer<typeof renderStyleSchema>;
+
+export const reviewStatusSchema = z.enum([
+  "awaiting-review", // render done, parked for a human
+  "changes-requested", // edits queued; a targeted re-gen/re-render is in flight
+  "approved", // released to youtube-uploader
+  "rejected", // abandoned, never published
+]);
+export type ReviewStatus = z.infer<typeof reviewStatusSchema>;
+
+/** A per-segment clip swap chosen in the review dashboard. */
+export const segmentClipOverrideSchema = z.object({
+  segmentId: z.number().int().nonnegative(),
+  /** The media/ filename the reviewer selected from the offered alternatives. */
+  file: z.string(),
+});
+export type SegmentClipOverride = z.infer<typeof segmentClipOverrideSchema>;
+
+/**
+ * jobs/{jobId}/review-state.json — the single source of truth for the human
+ * review gate. Written by the review dashboard, read by n8n to decide whether to
+ * release the job to youtube-uploader, and by render-server to apply voice/style/
+ * clip choices on a re-render.
+ */
+export const reviewStateSchema = z.object({
+  jobId: z.string().uuid(),
+  status: reviewStatusSchema,
+  /** Selected Edge-TTS voice id (e.g. "en-GB-RyanNeural"); null = pipeline default. */
+  voiceId: z.string().nullable().default(null),
+  /** Named saved preset this styling came from, if any (for the preset library). */
+  stylePresetId: z.string().nullable().default(null),
+  style: renderStyleSchema.default({}),
+  clipOverrides: z.array(segmentClipOverrideSchema).default([]),
+  reviewedBy: z.string().nullable().default(null),
+  updatedAt: z.string().datetime(),
+});
+export type ReviewState = z.infer<typeof reviewStateSchema>;
+
+/**
+ * A saved style/voice preset the operator can reuse across videos. Stored
+ * outside the per-job tree at presets/{presetId}.json.
+ */
+export const stylePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  voiceId: z.string().nullable().default(null),
+  style: renderStyleSchema.default({}),
+});
+export type StylePreset = z.infer<typeof stylePresetSchema>;

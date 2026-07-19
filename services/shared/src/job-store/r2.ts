@@ -18,6 +18,12 @@ export interface R2Config {
   bucketName: string;
   /** Full R2 S3-compatible endpoint, e.g. https://<accountId>.r2.cloudflarestorage.com */
   endpoint: string;
+  /**
+   * Use path-style addressing (`endpoint/bucket/key`) instead of virtual-hosted
+   * (`bucket.endpoint/key`). Required against a localhost S3 mock (no wildcard
+   * DNS for `bucket.localhost`) and harmless against R2, which supports both.
+   */
+  forcePathStyle?: boolean;
 }
 
 /**
@@ -34,6 +40,13 @@ export class JobStore {
     const clientConfig: S3ClientConfig = {
       region: "auto",
       endpoint: config.endpoint,
+      forcePathStyle: config.forcePathStyle,
+      // The AWS SDK's 2025 default (WHEN_SUPPORTED) adds a CRC32 trailing
+      // checksum, sending streamed uploads as `aws-chunked` bodies. R2 and other
+      // S3-compatible stores don't decode that framing and silently persist the
+      // chunk headers into the object. WHEN_REQUIRED keeps object bodies byte-exact.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
@@ -62,6 +75,7 @@ export class JobStore {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
       bucketName: env.R2_BUCKET_NAME!,
       endpoint: env.R2_ENDPOINT!,
+      forcePathStyle: env.R2_FORCE_PATH_STYLE === "true",
     });
   }
 
