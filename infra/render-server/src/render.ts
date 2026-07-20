@@ -62,6 +62,7 @@ export async function runRender(
       cacheDir,
       outputPath: outputLocation,
       changedSegmentIds,
+      concurrency: config.renderConcurrency,
       logger: logger.child({ jobId }),
     });
     logger.info(

@@ -32,6 +32,8 @@ export interface SegmentedRenderOptions {
    * timing and must go through a full re-render instead.
    */
   changedSegmentIds?: readonly number[];
+  /** Parallel frame workers; undefined lets Remotion pick from the CPU count. */
+  concurrency?: number;
   logger: Logger;
 }
 
@@ -44,7 +46,7 @@ export interface SegmentedRenderResult {
 }
 
 export async function renderSegmented(options: SegmentedRenderOptions): Promise<SegmentedRenderResult> {
-  const { serveUrl, compositionId, inputProps, cacheDir, outputPath, changedSegmentIds, logger } = options;
+  const { serveUrl, compositionId, inputProps, cacheDir, outputPath, changedSegmentIds, concurrency, logger } = options;
 
   const plan = buildChunkPlan(inputProps);
   const composition = await selectComposition({
@@ -110,6 +112,7 @@ export async function renderSegmented(options: SegmentedRenderOptions): Promise<
       // Remotion's frameRange is inclusive at both ends; chunk.endFrame is exclusive.
       frameRange: [chunk.startFrame, chunk.endFrame - 1],
       muted: true,
+      concurrency,
       outputLocation: chunkPath(cacheDir, chunk),
       inputProps: inputProps as unknown as Record<string, unknown>,
     });

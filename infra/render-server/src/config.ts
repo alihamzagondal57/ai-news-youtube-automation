@@ -27,6 +27,12 @@ export const config = {
     height: Number(process.env.RENDER_HEIGHT ?? 2160),
     fps: Number(process.env.RENDER_FPS ?? 30),
   },
+  /**
+   * Parallel frame workers. Undefined lets Remotion use the CPU count, which is
+   * right on the 8-vCPU render VM. Cap it on memory-constrained hosts: each
+   * worker holds a full frame buffer, and a 4K frame is ~33MB before encoding.
+   */
+  renderConcurrency: process.env.RENDER_CONCURRENCY ? Number(process.env.RENDER_CONCURRENCY) : undefined,
   branding: {
     channelName: process.env.CHANNEL_NAME ?? "EuroWire News",
     accentColor: process.env.ACCENT_COLOR ?? "#e11d2e",
