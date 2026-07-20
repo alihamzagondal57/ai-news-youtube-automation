@@ -100,7 +100,16 @@ changes the narration audio and therefore **all** segment timings, a voice chang
 re-runs `voiceover` → `caption-sync` → a **full** re-render (not a targeted one).
 The selected voice is stored as `review-state.json.voiceId`.
 
-### 4. Text overlay styling
+### 4. Theme override
+Each video is auto-assigned one of 18 visual themes, avoiding recent picks so
+consecutive uploads don't look like one template re-run. The dashboard shows the
+assigned theme and lets the operator pick a different one, written to
+`review-state.json.themeId`. Because a theme changes the palette, typography,
+ticker, lower-third, transitions and motion graphics all at once, switching it
+requires a **full** re-render — not a targeted one. Selection and stickiness are
+described in [`docs/PIPELINE.md`](PIPELINE.md).
+
+### 5. Text overlay styling
 Caption font/size/color, ticker style, and lower-third style are user-configurable
 (`renderStyleSchema`), applied at render time by the Remotion composition. Any
 unset field falls back to the channel default, so the default look is unchanged.

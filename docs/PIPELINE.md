@@ -22,11 +22,23 @@ jobs/{jobId}/
 │   ├── segment-*.mp4          #   video-only chunks, one per segment
 │   ├── outro.mp4              #   video-only outro chunk
 │   └── audio.wav              #   full-timeline audio, rendered once and reused
-├── review-state.json          # from review-dashboard: approval status, voice/style/clip choices
+├── theme.json                 # the visual theme this job renders with (sticky once chosen)
+├── review-state.json          # from review-dashboard: approval status, voice/style/clip/theme choices
 └── youtube-result.json        # from youtube-uploader
 ```
 
-Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`).
+Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`). Theme rotation history lives at `state/theme-rotation.json`.
+
+### Theme selection
+Every video gets one of 18 visual themes (`services/shared/src/theme`), so consecutive uploads don't look like the same template re-run — which is what YouTube's inauthentic-content policy penalises. render-server resolves the theme in priority order:
+
+1. **Manual override** — `review-state.json.themeId`, set from the review dashboard.
+2. **The theme already recorded for this job** — `jobs/{jobId}/theme.json`.
+3. **Auto-rotation** — picks from the catalog excluding the last few used (`state/theme-rotation.json`), then records the pick.
+
+Step 2 makes the theme **sticky per job**, and that is load-bearing rather than an optimisation: a targeted re-render reuses cached chunks, so re-rolling the theme would re-skin the video while stale-looking chunks were spliced back in. Rotation happens once per job, not once per render. A theme change (override) re-skins everything and therefore requires a **full** re-render, never a targeted one.
+
+Rotation state is read-modify-write without a lock. The pipeline renders one video at a time on a single on-demand VM, so this is safe; genuinely concurrent jobs could pick the same theme, which costs variety but breaks nothing.
 
 ## Step order
 1. **trend-research** (auto mode only) → `trend.json`

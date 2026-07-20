@@ -12,6 +12,8 @@ The pipeline does **not** auto-publish. After rendering, every video parks at a 
 
 Because every video uses a synthetic voice and an AI-written script, the uploader always sets YouTube's **"altered or synthetic content"** disclosure, and the script generator adds an **original-insight layer** (context, analysis, implications) to every segment rather than reading headlines verbatim — both required to stay monetizable under YouTube's 2026 inauthentic-content policy.
 
+For the same reason, videos don't share one look: an **18-theme design system** (palette, font pairing, ticker, lower-third, transitions, motion graphics) auto-rotates so consecutive uploads aren't the same template re-run, with a manual override in the review dashboard. See [`docs/PIPELINE.md`](docs/PIPELINE.md#theme-selection).
+
 ## Why this architecture
 
 The pipeline is split into small, single-purpose services connected by a **shared job artifact store** (Cloudflare R2, S3-compatible) rather than one monolithic script, because:

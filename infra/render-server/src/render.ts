@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { downloadJobAssets } from "./jobAssets.js";
 import { AUDIO_CACHE_FILE, chunkPath, renderSegmented } from "./renderSegmented.js";
 import { buildChunkPlan } from "./segmentPlan.js";
+import { resolveJobTheme } from "./themeSelection.js";
 
 /** Per-segment render cache, so a clip swap re-renders three chunks instead of the whole video. */
 const RENDER_CACHE_PREFIX = "renders";
@@ -34,7 +35,11 @@ export async function runRender(
   await mkdir(cacheDir, { recursive: true });
 
   try {
-    const inputProps = buildInputProps(assets);
+    // Resolved before rendering because it decides the whole video's look — and
+    // it is sticky per job, so a targeted re-render can't silently re-skin the
+    // video and invalidate the chunk cache it is about to reuse.
+    const themeId = await resolveJobTheme(store, jobId, logger);
+    const inputProps = buildInputProps(assets, { themeId });
     const { changedSegmentIds } = options;
 
     // A targeted re-render is only meaningful if the previous chunks are still

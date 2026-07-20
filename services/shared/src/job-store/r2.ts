@@ -33,6 +33,16 @@ export interface R2Config {
  * talking to the S3 SDK directly, so the `jobs/{jobId}/...` key layout
  * (docs/PIPELINE.md) stays in one place.
  */
+/**
+ * S3-compatible stores disagree on how a missing object surfaces: the SDK may
+ * raise NoSuchKey/NotFound by name, or only carry a 404 in $metadata. Check both
+ * so a genuine error never gets swallowed as "absent".
+ */
+function isNotFound(err: unknown): boolean {
+  const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
+  return e?.name === "NoSuchKey" || e?.name === "NotFound" || e?.Code === "NoSuchKey" || e?.$metadata?.httpStatusCode === 404;
+}
+
 export class JobStore {
   private readonly s3: S3Client;
   private readonly bucket: string;
@@ -114,6 +124,22 @@ export class JobStore {
         ContentType: contentType,
       }),
     );
+  }
+
+  /**
+   * Like getJson, but returns null when the object doesn't exist instead of
+   * throwing. For genuinely optional artifacts — review state, rotation history —
+   * where "not written yet" is a normal first-run condition rather than an error.
+   */
+  async getJsonIfExists<T>(key: string, schema: z.ZodType<T>): Promise<T | null> {
+    try {
+      return await this.getJson(key, schema);
+    } catch (err) {
+      if (isNotFound(err)) {
+        return null;
+      }
+      throw err;
+    }
   }
 
   /**

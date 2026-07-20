@@ -237,6 +237,12 @@ export const reviewStateSchema = z.object({
   status: reviewStatusSchema,
   /** Selected Edge-TTS voice id (e.g. "en-GB-RyanNeural"); null = pipeline default. */
   voiceId: z.string().nullable().default(null),
+  /**
+   * Manual theme override from the review dashboard; null leaves the job on
+   * whatever auto-rotation picked. Changing this re-skins the entire video, so
+   * it requires a full re-render, not a targeted one.
+   */
+  themeId: z.string().nullable().default(null),
   /** Named saved preset this styling came from, if any (for the preset library). */
   stylePresetId: z.string().nullable().default(null),
   style: renderStyleSchema.default({}),

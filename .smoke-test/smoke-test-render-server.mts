@@ -14,6 +14,7 @@ import { mkdtemp, rm, stat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import S3rver from "s3rver";
+import { z } from "zod";
 import { generateColorClip, probeVideo } from "./lib/media.mts";
 
 function assert(condition: boolean, description: string): void {
@@ -169,6 +170,13 @@ async function main() {
 
     const coldProbe = await probeVideo(localOut);
 
+    // Auto-rotation should have picked and recorded a theme for this job.
+    const themeAfterCold = await store.getJsonIfExists(
+      store.jobKey(JOB_ID, "theme.json"),
+      z.object({ themeId: z.string() }),
+    );
+    assert(themeAfterCold !== null, `auto-rotation recorded a theme for the job ("${themeAfterCold?.themeId}")`);
+
     // --- Targeted re-render: swap segment 1's clip, rebuild only what's dirty.
     console.log("\nTargeted re-render: swapping segment 1's clip (green -> blue)");
     await store.putJson(store.jobKey(JOB_ID, "media/media-manifest.json"), manifestWithClips("clip-blue.mp4"));
@@ -190,6 +198,18 @@ async function main() {
       targetedProbe.audioDurationSeconds !== null &&
         Math.abs(targetedProbe.audioDurationSeconds - targetedProbe.videoDurationSeconds) < 0.05,
       `audio still in sync (audio ${targetedProbe.audioDurationSeconds}s vs video ${targetedProbe.videoDurationSeconds}s)`,
+    );
+
+    // The theme must NOT have been re-rolled by the second render: a new theme
+    // would re-skin the whole video while three chunks were reused from cache,
+    // producing a video whose cached segments no longer match the new look.
+    const themeAfterTargeted = await store.getJsonIfExists(
+      store.jobKey(JOB_ID, "theme.json"),
+      z.object({ themeId: z.string() }),
+    );
+    assert(
+      themeAfterTargeted?.themeId === themeAfterCold?.themeId,
+      `theme stayed "${themeAfterTargeted?.themeId}" across the targeted re-render — cached chunks remain valid`,
     );
 
     await rm(clipDir, { recursive: true, force: true });
