@@ -1,3 +1,4 @@
+import { DEFAULT_THEME_ID } from "@ai-news/shared/theme";
 import type { NewsVideoProps } from "../src/types/newsVideoProps";
 
 const FPS = 30;
@@ -62,6 +63,7 @@ export const sampleJobProps: NewsVideoProps = {
     channelName: "EuroWire News",
     accentColor: "#e11d2e",
   },
+  themeId: DEFAULT_THEME_ID,
 };
 
 function buildSampleCaptionWords(): NewsVideoProps["captionWords"] {

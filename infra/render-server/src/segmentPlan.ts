@@ -1,16 +1,18 @@
 import type { NewsVideoRenderProps } from "./buildInputProps.js";
 
 /**
- * Must stay equal to TRANSITION_FRAMES in remotion/src/compositions/NewsVideo.tsx.
+ * Fallback only, for props predating per-theme transitions. The real value comes
+ * from the theme (`transition.frames`, 12-24 across the catalog) and arrives on
+ * NewsVideoRenderProps.transitionFrames.
  *
- * Deliberately duplicated rather than imported, for the same reason
- * NewsVideoRenderProps is (see buildInputProps.ts): the composition must stay
- * free of this server's Node-only deps, so the two workspaces share no runtime
- * code. Drift here would show up as a visible seam at a stitch boundary, which
- * is precisely what the boundary smoke test asserts against a monolithic
- * reference render — so a mismatch fails the build rather than shipping.
+ * This used to be a hardcoded 15 duplicated from the composition. That was safe
+ * only while every video shared one transition length; with per-theme values a
+ * theme like `oceanic` (24 frames) would bleed 9 frames further than the
+ * invalidation window covered, leaving a stale clip in the crossfade on a
+ * targeted re-render. Both sides now read the same catalog entry, so they cannot
+ * disagree.
  */
-export const SEGMENT_TRANSITION_FRAMES = 15;
+export const DEFAULT_TRANSITION_FRAMES = 15;
 
 export interface RenderChunk {
   /** Stable cache key / filename component, e.g. "segment-3" or "outro". */
@@ -112,16 +114,17 @@ export function computeDirtyRanges(
   changedSegmentIds: readonly number[],
   totalDurationInFrames: number,
 ): Array<{ startFrame: number; endFrame: number }> {
+  const transitionFrames = props.transitionFrames ?? DEFAULT_TRANSITION_FRAMES;
   return changedSegmentIds.map((id) => {
     const segment = props.segments.find((s) => s.id === id);
     if (!segment) {
       throw new Error(`Cannot re-render unknown segment id ${id}`);
     }
     return {
-      startFrame: Math.max(0, segment.startFrame - SEGMENT_TRANSITION_FRAMES),
+      startFrame: Math.max(0, segment.startFrame - transitionFrames),
       endFrame: Math.min(
         totalDurationInFrames,
-        segment.startFrame + segment.durationInFrames + SEGMENT_TRANSITION_FRAMES,
+        segment.startFrame + segment.durationInFrames + transitionFrames,
       ),
     };
   });

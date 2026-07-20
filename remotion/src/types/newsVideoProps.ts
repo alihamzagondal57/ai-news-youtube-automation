@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_THEME_ID } from "@ai-news/shared/theme";
 
 export const segmentPropsSchema = z.object({
   id: z.number().int().nonnegative(),
@@ -39,5 +40,11 @@ export const newsVideoPropsSchema = z.object({
     channelName: z.string(),
     accentColor: z.string().default("#e11d2e"),
   }),
+  /**
+   * Visual theme for this video (see services/shared/src/theme). Unknown ids
+   * fall back to the default rather than failing a render — a bad theme id
+   * should not cost a 4K render that is otherwise fine.
+   */
+  themeId: z.string().default(DEFAULT_THEME_ID),
 });
 export type NewsVideoProps = z.infer<typeof newsVideoPropsSchema>;

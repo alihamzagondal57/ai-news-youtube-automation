@@ -1,3 +1,4 @@
+import { DEFAULT_THEME_ID, getThemeOrDefault } from "@ai-news/shared/theme";
 import { config } from "./config.js";
 import type { JobAssets } from "./jobAssets.js";
 
@@ -29,13 +30,27 @@ export interface NewsVideoRenderProps {
   tickerHeadlines: string[];
   audio: { voiceoverSrc: string; musicSrc: string; musicVolume: number; duckedVolume: number };
   branding: { channelName: string; accentColor: string };
+  themeId: string;
+  /**
+   * Mirrors the resolved theme's transition.frames. Carried explicitly so
+   * segmentPlan can widen targeted-re-render invalidation by the right amount
+   * without importing the composition — both sides resolve it from the same
+   * catalog entry, so they cannot drift.
+   */
+  transitionFrames: number;
 }
 
 const OUTRO_SECONDS = 5;
 
-export function buildInputProps(assets: JobAssets): NewsVideoRenderProps {
+export interface BuildInputPropsOptions {
+  /** Resolved upstream (review override or auto-rotation); falls back to the default theme. */
+  themeId?: string;
+}
+
+export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptions = {}): NewsVideoRenderProps {
   const { script, segmentTiming, captions, mediaManifest } = assets;
   const { fps, width, height } = config.video;
+  const theme = getThemeOrDefault(options.themeId ?? DEFAULT_THEME_ID);
 
   const timingById = new Map(segmentTiming.segments.map((s) => [s.id, s]));
   const clipById = new Map(mediaManifest.clips.map((c) => [c.segmentId, c]));
@@ -72,6 +87,8 @@ export function buildInputProps(assets: JobAssets): NewsVideoRenderProps {
       duckedVolume: 0.05,
     },
     branding: config.branding,
+    themeId: theme.id,
+    transitionFrames: theme.transition.frames,
   };
 }
 

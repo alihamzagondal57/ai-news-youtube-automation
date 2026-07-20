@@ -15,7 +15,8 @@ import { createLogger } from "@ai-news/shared";
 import type { NewsVideoRenderProps } from "../infra/render-server/src/buildInputProps.ts";
 import { concatVideoChunks, muxAudioOntoVideo } from "../infra/render-server/src/ffmpeg.ts";
 import { AUDIO_CACHE_FILE, chunkPath, renderSegmented } from "../infra/render-server/src/renderSegmented.ts";
-import { buildChunkPlan, computeDirtyRanges, SEGMENT_TRANSITION_FRAMES } from "../infra/render-server/src/segmentPlan.ts";
+import { buildChunkPlan, computeDirtyRanges } from "../infra/render-server/src/segmentPlan.ts";
+import { getTheme } from "../services/shared/src/theme/index.ts";
 import { comparePsnr, comparePsnrRange, generateColorClip, perFramePsnr, probeVideo } from "./lib/media.mts";
 
 const REPO = "C:\\Users\\HP\\New folder";
@@ -30,6 +31,13 @@ const SEGMENT_COUNT = 4;
 // bit-identical; anything above this is "visually the same picture". A stale
 // clip or a seam drops this into the teens.
 const PSNR_THRESHOLD_DB = 40;
+
+// Deliberately a theme whose transition is NOT the old hardcoded 15 frames.
+// broadsheet uses wipeX at 18 frames: a hard-edged reveal makes the incoming
+// clip visible immediately at the mount boundary, so bleed reaches ~17 frames
+// out — past the old hardcoded 15. If invalidation reverts to a constant the
+// bleed would extend 9 frames past the window and this suite fails.
+const TEST_THEME = getTheme("broadsheet");
 
 const logger = createLogger("stitch-smoke");
 
@@ -70,6 +78,8 @@ function buildProps(clipBySegment: string[]): NewsVideoRenderProps {
       { word: "here", start: 7.0, end: 7.4 },
     ],
     tickerHeadlines: ["STITCH TEST", "FRAME EXACT", "NO DRIFT"],
+    themeId: TEST_THEME.id,
+    transitionFrames: TEST_THEME.transition.frames,
     audio: { voiceoverSrc: "voiceover.wav", musicSrc: "music.wav", musicVolume: 0.15, duckedVolume: 0.05 },
     branding: { channelName: "EuroWire News", accentColor: "#e11d2e" },
   };
@@ -181,14 +191,18 @@ async function main() {
   console.log(failures === 0 ? "TEST A PASSED\n" : `TEST A: ${failures} failure(s)\n`);
 
   // ── Test B: swap one MIDDLE segment and re-render only what's dirty ───────
-  console.log("TEST B: targeted re-render after swapping segment 1 (green -> magenta)");
+  console.log("TEST B: targeted re-render after swapping segment 2 (blue -> magenta)");
 
   // Snapshot the warm cache so the negative control below starts from the same
   // state as the real path instead of inheriting its (correct) output.
   const naiveCacheDir = join(work, "cache-naive");
   await cp(cacheDir, naiveCacheDir, { recursive: true });
 
-  const swappedClips = ["clip-red.mp4", "clip-magenta.mp4", "clip-blue.mp4", "clip-yellow.mp4"];
+  // Segment 2, not segment 1: the intro stinger (75 frames, fading out from 55)
+  // sits opaquely over the segment 0->1 boundary at frame 60, which would mask
+  // the transition entirely and make the bleed measurement meaningless.
+  // Segment 2 boundaries (120, 180) are clear of it and it is still a middle segment.
+  const swappedClips = ["clip-red.mp4", "clip-green.mp4", "clip-magenta.mp4", "clip-yellow.mp4"];
   const swappedProps = buildProps(swappedClips);
 
   const referenceSwappedPath = join(work, "reference-swapped.mp4");
@@ -204,7 +218,7 @@ async function main() {
     inputProps: swappedProps,
     cacheDir,
     outputPath: targetedPath,
-    changedSegmentIds: [1],
+    changedSegmentIds: [2],
     logger,
   });
 
@@ -214,12 +228,12 @@ async function main() {
   // frames and still fading out during segment 2's, so all three are dirty.
   check(
     "dirty chunk selection accounts for crossfade bleed",
-    targetedResult.renderedChunkIds.join(",") === "segment-0,segment-1,segment-2",
+    targetedResult.renderedChunkIds.join(",") === "segment-1,segment-2,segment-3",
     `re-rendered [${targetedResult.renderedChunkIds.join(", ")}]`,
   );
   check(
     "untouched chunks reused from cache",
-    targetedResult.reusedChunkIds.join(",") === "segment-3,outro",
+    targetedResult.reusedChunkIds.join(",") === "segment-0,outro",
     `reused [${targetedResult.reusedChunkIds.join(", ")}]`,
   );
   check(
@@ -262,25 +276,45 @@ async function main() {
   // If the composition's TRANSITION_FRAMES ever changes without segmentPlan.ts
   // following, this fails instead of silently shipping a seam.
   const perFrame = await perFramePsnr(referencePath, referenceSwappedPath, join(work, "psnr-stats.log"));
-  const changedFrames = perFrame.filter((f) => f.psnr < 45).map((f) => f.frame);
-  const dirtyRanges = computeDirtyRanges(swappedProps, [1], coldResult.plan.totalDurationInFrames);
-  const dirty = dirtyRanges[0];
 
+  // Threshold at 35 dB, not 45. Both references are H.264, and inter-frame
+  // prediction propagates a real difference forward: once frames diverge, later
+  // frames reference them and the encoder emits small deltas even where the
+  // source pixels are identical. Genuine content changes here measure 13-22 dB;
+  // that propagation trails at 40-44 dB. Counting it as "changed" would claim
+  // segment 2 affects frames after its <Sequence> has unmounted, which is
+  // impossible by construction.
+  const CONTENT_CHANGE_DB = 35;
+  const changedFrames = perFrame.filter((f) => f.psnr < CONTENT_CHANGE_DB).map((f) => f.frame);
+  const dirtyRanges = computeDirtyRanges(swappedProps, [2], coldResult.plan.totalDurationInFrames);
+  const dirty = dirtyRanges[0];
   const firstChanged = Math.min(...changedFrames);
   const lastChanged = Math.max(...changedFrames);
 
+  // What actually protects against stale cache is whole-CHUNK coverage, not the
+  // raw dirty range: invalidation selects any chunk the range touches, so the
+  // re-rendered span is always a superset of the range.
+  const rerendered = coldResult.plan.chunks.filter((c) => targetedResult.renderedChunkIds.includes(c.id));
+  const coveredStart = Math.min(...rerendered.map((c) => c.startFrame));
+  const coveredEnd = Math.max(...rerendered.map((c) => c.endFrame));
+
   console.log(
-    `  swap actually changes frames ${firstChanged}-${lastChanged}; invalidation window is [${dirty.startFrame}, ${dirty.endFrame})`,
+    `  swap changes frames ${firstChanged}-${lastChanged}; dirty range [${dirty.startFrame}, ${dirty.endFrame}); re-rendered chunks cover [${coveredStart}, ${coveredEnd})`,
   );
   check(
-    "invalidation window covers every genuinely changed frame",
+    "re-rendered chunks cover every genuinely changed frame",
+    firstChanged >= coveredStart && lastChanged < coveredEnd,
+    `changed [${firstChanged}, ${lastChanged}] inside re-rendered [${coveredStart}, ${coveredEnd}) — no changed frame is served from stale cache`,
+  );
+  check(
+    "changed frames stay inside the swapped segment's mount window",
     firstChanged >= dirty.startFrame && lastChanged < dirty.endFrame,
-    `changed [${firstChanged}, ${lastChanged}] inside dirty [${dirty.startFrame}, ${dirty.endFrame}) — no changed frame is served from stale cache`,
+    `changed [${firstChanged}, ${lastChanged}] inside mount window [${dirty.startFrame}, ${dirty.endFrame}) — a segment cannot affect frames where it is unmounted`,
   );
   check(
     "changed frames extend beyond the swapped segment's own range",
-    firstChanged < SEGMENT_FRAMES || lastChanged >= SEGMENT_FRAMES * 2,
-    `segment 1 owns frames [${SEGMENT_FRAMES}, ${SEGMENT_FRAMES * 2}) but changes reach ${firstChanged}-${lastChanged} — neighbouring chunks really are dirty`,
+    firstChanged < SEGMENT_FRAMES * 2 || lastChanged >= SEGMENT_FRAMES * 3,
+    `segment 2 owns frames [${SEGMENT_FRAMES * 2}, ${SEGMENT_FRAMES * 3}) but changes reach ${firstChanged}-${lastChanged} — neighbouring chunks really are dirty`,
   );
   console.log("");
 
@@ -288,14 +322,14 @@ async function main() {
   // Re-render ONLY the swapped segment's own chunk, ignoring the crossfade
   // bleed. This is the naive implementation; if the assertions above can't
   // catch it, they aren't testing anything.
-  console.log("NEGATIVE CONTROL: naive re-render of only segment-1's own range (expected to FAIL comparison)");
+  console.log("NEGATIVE CONTROL: naive re-render of only segment-2 own range (expected to FAIL comparison)");
   const naivePlan = buildChunkPlan(swappedProps);
   const naiveComposition = await selectComposition({
     serveUrl,
     id: "NewsVideo",
     inputProps: swappedProps as unknown as Record<string, unknown>,
   });
-  const naiveChunk = naivePlan.chunks.find((c) => c.id === "segment-1")!;
+  const naiveChunk = naivePlan.chunks.find((c) => c.id === "segment-2")!;
   await renderMedia({
     composition: naiveComposition,
     serveUrl,
@@ -319,8 +353,8 @@ async function main() {
   // Compare across the join windows specifically. A ~30-frame defect is invisible
   // in a whole-video average (it moved PSNR only 52 -> 46 dB), so the boundary
   // regions are measured on their own — this is the explicit stitch-boundary test.
-  const joinBefore = { start: SEGMENT_FRAMES - SEGMENT_TRANSITION_FRAMES, end: SEGMENT_FRAMES };
-  const joinAfter = { start: SEGMENT_FRAMES * 2, end: SEGMENT_FRAMES * 2 + SEGMENT_TRANSITION_FRAMES };
+  const joinBefore = { start: SEGMENT_FRAMES * 2 - TEST_THEME.transition.frames, end: SEGMENT_FRAMES * 2 };
+  const joinAfter = { start: SEGMENT_FRAMES * 3, end: SEGMENT_FRAMES * 3 + TEST_THEME.transition.frames };
 
   const targetedJoinIn = await comparePsnrRange(referenceSwappedPath, targetedPath, joinBefore.start, joinBefore.end);
   const targetedJoinOut = await comparePsnrRange(referenceSwappedPath, targetedPath, joinAfter.start, joinAfter.end);

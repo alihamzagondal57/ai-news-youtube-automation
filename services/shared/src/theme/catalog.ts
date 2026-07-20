@@ -163,7 +163,9 @@ export const THEMES: readonly Theme[] = [
       caption: SANS,
       captionWeight: 700,
     },
-    ticker: { variant: "band", badge: "DISPATCH", speed: 145, heightScale: 1 },
+    // Chips rather than a band: "band" was carrying six themes and made dispatch
+    // read as a sibling of frontline and midnight-wire.
+    ticker: { variant: "chips", badge: "DISPATCH", speed: 145, heightScale: 1 },
     lowerThird: { variant: "stackedRule", align: "left", enter: "fadeUp" },
     captions: { variant: "highlightWord", weight: 700, sizeScale: 1 },
     intro: "cornerSlate",
@@ -492,15 +494,18 @@ export const THEMES: readonly Theme[] = [
   {
     id: "frontline",
     name: "Frontline",
-    description: "Olive and sand with a heavy accent bar — on-the-ground correspondent reporting.",
+    description: "Olive drab with field green — on-the-ground correspondent reporting.",
     palette: {
+      // Moved out of the yellow family (was #b5c400 lime, which read as a third
+      // variation on dispatch's amber and sterling's gold). Field green is
+      // thematically right here and was an unused hue in the catalog.
       base: "#12140d",
       surface: "#1c1f14ee",
-      accent: "#b5c400",
-      accentSoft: "#e0eb6b",
+      accent: "#6d9b3f",
+      accentSoft: "#a9cd7a",
       textPrimary: "#f7f8ee",
       textMuted: "#a8ad8f",
-      captionActive: "#b5c400",
+      captionActive: "#a9cd7a",
       scrimStrength: 0.66,
     },
     fonts: {
