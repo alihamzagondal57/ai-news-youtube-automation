@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-news/shared": "*",
     "@remotion/cli": "^4.0.190",
     "@remotion/media-utils": "^4.0.190",
     "react": "^18.3.1",
