@@ -20,6 +20,22 @@ Script quality is the product, and the original-insight layer is a *compliance* 
 
 Groq is kept in the chain for **availability, not quality**: it's used only when Claude errors (outage, rate limit, refusal, truncation). Its output goes through exactly the same validation, so a weaker model that restates its sources gets rejected rather than silently shipping a worse script.
 
+> ### ⚠️ Measured limitation: the Groq fallback cannot currently satisfy these structures
+>
+> Live runs against `llama-3.3-70b-versatile` (`.smoke-test/live-test-script-generation.mts`) show a hard output ceiling of roughly **155–165 spoken words per segment and ~1,100–1,350 output tokens per response**, regardless of what the brief asks for:
+>
+> | Structure | Required per segment | Model produced |
+> |---|---|---|
+> | `rapid-wire` | 115–170 | 57–66 |
+> | `anchor-brief` | 170–250 | 94–167 |
+> | `long-lens` | 250–400 | 110–164 |
+>
+> More segments makes it *worse*, not better — each segment carries `headline`/`visualCue`/`insight` overhead, so a 7-segment structure leaves less room for prose than a 4-segment one. `max_tokens` is not the constraint (8,000 given, ~1,200 used).
+>
+> **The compliance checks are satisfiable by this model; the length requirement is not.** On its best attempt every novelty, verbatim, and insight-coverage check passed (novelty 0.65–0.86, shared runs ≤8, coverage 0.50–0.83) and only the word budgets failed. So the fallback fails *loudly* rather than shipping a non-compliant script — correct behaviour, but it means the fallback is largely theoretical today: if Claude is unavailable, the pipeline halts.
+>
+> Making it genuinely viable would need per-segment generation (one call per segment) rather than one call per script. Not implemented — flagged rather than hidden.
+
 Request configuration (`src/providers/claude.ts`):
 - **Adaptive thinking** set explicitly — on this model family, omitting `thinking` runs with *no* thinking, which is the wrong default for work that weighs sources and constructs analysis.
 - **`effort: "high"`** — quality-critical work; tunable via `SCRIPT_CLAUDE_EFFORT`.

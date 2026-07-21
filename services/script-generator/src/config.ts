@@ -22,7 +22,13 @@ export const config = {
    * shares this budget. Streaming makes a large ceiling safe.
    */
   maxTokens: Number(process.env.SCRIPT_MAX_TOKENS ?? 32000),
-  maxAttempts: Number(process.env.SCRIPT_MAX_ATTEMPTS ?? 2),
+  /**
+   * 3, not 2: live runs against the fallback model showed corrective retries
+   * genuinely converging (verbatim lifting fell 13 tokens -> 9 -> under the
+   * limit across successive attempts), but needing more than two rounds to get
+   * there. Two attempts threw away drafts that were still improving.
+   */
+  maxAttempts: Number(process.env.SCRIPT_MAX_ATTEMPTS ?? 3),
 };
 
 /**

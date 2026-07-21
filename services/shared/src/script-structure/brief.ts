@@ -69,6 +69,14 @@ export function buildStructuralBrief(structure: ScriptStructure): string {
     `OPENING (${OPENING_WORDS.min}-${OPENING_WORDS.max} words): ${OPENING_DIRECTIVES[opening]}`,
     ``,
     `BODY: ${segments.minSegments}-${segments.maxSegments} segments, ${segments.minWordsPerSegment}-${segments.maxWordsPerSegment} spoken words each.`,
+    // A midpoint target rather than only the range. Live runs showed models
+    // anchoring below the lower bound and staying there across retries.
+    // Measured honestly: adding this target did NOT fix that for
+    // llama-3.3-70b, which caps out around 150 words per segment regardless of
+    // instruction — that turned out to be a capability ceiling, not a prompting
+    // problem. Kept because naming a target and a direction to miss in is
+    // strictly better guidance, but it is not a solution to under-writing.
+    `Target roughly ${Math.round((segments.minWordsPerSegment + segments.maxWordsPerSegment) / 2)} words per segment. Writing too SHORT is the single most common reason a draft is rejected, so if you are unsure, write longer and develop the point further rather than moving on.`,
     `Rhythm: ${segments.rhythm}.`,
     `Throughline: ${THROUGHLINE_DIRECTIVES[throughline]}`,
     ``,
