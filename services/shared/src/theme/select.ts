@@ -1,4 +1,5 @@
-import { DEFAULT_THEME_ID, THEME_IDS } from "./catalog.js";
+import { rotate, type RotationState } from "../rotation/select.js";
+import { THEME_IDS } from "./catalog.js";
 
 /**
  * jobs-independent rotation state, stored at `state/theme-rotation.json`.
@@ -36,43 +37,28 @@ export interface ThemeSelection {
 }
 
 /**
- * Picks the theme for the next video.
- *
- * Auto-rotation avoids the most recent `ROTATION_AVOID_WINDOW` themes. A manual
- * override is honoured as-is but still recorded in the history, so a later
- * auto-pick won't immediately repeat what was just chosen by hand.
+ * Picks the theme for the next video. Thin wrapper over the shared rotation
+ * helper (../rotation) — the field names here predate it and are kept for the
+ * stored state/theme-rotation.json format.
  */
 export function selectTheme(options: SelectThemeOptions = {}): ThemeSelection {
-  const {
-    state = EMPTY_ROTATION_STATE,
-    override = null,
-    random = Math.random,
-    availableThemeIds = THEME_IDS,
-  } = options;
+  const { state = EMPTY_ROTATION_STATE, override = null, random, availableThemeIds = THEME_IDS } = options;
 
-  if (availableThemeIds.length === 0) {
-    throw new Error("Cannot select a theme from an empty catalog");
-  }
+  const result = rotate({
+    ids: availableThemeIds,
+    state: toRotationState(state),
+    override,
+    avoidWindow: ROTATION_AVOID_WINDOW,
+    random,
+  });
 
-  if (override) {
-    if (!availableThemeIds.includes(override)) {
-      throw new Error(`Manual theme override "${override}" is not a known theme id`);
-    }
-    return { themeId: override, manual: true, nextState: pushRecent(state, override) };
-  }
-
-  // Never exclude everything: if the catalog is smaller than the avoid window,
-  // fall back to excluding only what still leaves a choice.
-  const maxExclusions = Math.max(0, Math.min(ROTATION_AVOID_WINDOW, availableThemeIds.length - 1));
-  const excluded = new Set(state.recentThemeIds.slice(0, maxExclusions));
-  const candidates = availableThemeIds.filter((id) => !excluded.has(id));
-  const pool = candidates.length > 0 ? candidates : [...availableThemeIds];
-
-  const picked = pool[Math.floor(random() * pool.length) % pool.length] ?? DEFAULT_THEME_ID;
-  return { themeId: picked, manual: false, nextState: pushRecent(state, picked) };
+  return {
+    themeId: result.id,
+    manual: result.manual,
+    nextState: { recentThemeIds: result.nextState.recentIds },
+  };
 }
 
-function pushRecent(state: ThemeRotationState, themeId: string): ThemeRotationState {
-  const deduped = state.recentThemeIds.filter((id) => id !== themeId);
-  return { recentThemeIds: [themeId, ...deduped].slice(0, ROTATION_AVOID_WINDOW * 2) };
+function toRotationState(state: ThemeRotationState): RotationState {
+  return { recentIds: state.recentThemeIds };
 }

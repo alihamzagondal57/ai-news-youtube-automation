@@ -22,12 +22,20 @@ jobs/{jobId}/
 │   ├── segment-*.mp4          #   video-only chunks, one per segment
 │   ├── outro.mp4              #   video-only outro chunk
 │   └── audio.wav              #   full-timeline audio, rendered once and reused
+├── script-structure.json      # the script skeleton this job was written against (sticky once chosen)
 ├── theme.json                 # the visual theme this job renders with (sticky once chosen)
 ├── review-state.json          # from review-dashboard: approval status, voice/style/clip/theme choices
 └── youtube-result.json        # from youtube-uploader
 ```
 
-Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`). Theme rotation history lives at `state/theme-rotation.json`.
+Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`). Rotation history lives at `state/theme-rotation.json` and `state/script-structure-rotation.json`.
+
+### Script structure selection
+Each video is written against one of 13 script skeletons (`services/shared/src/script-structure`), varying opening move, throughline, segment count/depth, analysis placement, and outro — so consecutive videos don't share a shape, only a format. This is the counterpart to theme rotation: themes vary the *look*, structures vary the *script*, and the inauthentic-content policy penalises sameness in both.
+
+Resolution mirrors theme selection exactly — manual override (`review-state.json.structureId`) → the structure already recorded for this job (`script-structure.json`) → auto-rotation excluding the last 4. Both rotations share one implementation (`services/shared/src/rotation`), so the no-recent-repeats guarantee is verified in one place.
+
+Stickiness matters for a different reason here than for themes: re-running a failed `script-generator` step is the normal retry path, and re-rolling the skeleton mid-retry would produce a structurally different script than downstream steps were told about. A structure override regenerates the script and therefore **everything downstream** — the most expensive override in the pipeline. Full design: [`services/script-generator/README.md`](../services/script-generator/README.md).
 
 ### Theme selection
 Every video gets one of 18 visual themes (`services/shared/src/theme`), so consecutive uploads don't look like the same template re-run — which is what YouTube's inauthentic-content policy penalises. render-server resolves the theme in priority order:

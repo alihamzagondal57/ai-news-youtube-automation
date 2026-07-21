@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "services/shared" },
+    { "path": "services/script-generator" },
     { "path": "infra/render-server" }
   ]
 }

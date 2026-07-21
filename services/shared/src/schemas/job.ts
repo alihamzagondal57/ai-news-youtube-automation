@@ -60,6 +60,12 @@ export type ScriptSegment = z.infer<typeof scriptSegmentSchema>;
 export const scriptSchema = z.object({
   jobId: z.string().uuid(),
   title: z.string(),
+  /**
+   * Which script skeleton (services/shared/src/script-structure) this script
+   * was generated against. Recorded for traceability and shown in the review
+   * dashboard; optional because scripts predating the structure system lack it.
+   */
+  structureId: z.string().optional(),
   segments: z.array(scriptSegmentSchema).min(1),
 });
 export type Script = z.infer<typeof scriptSchema>;
@@ -243,6 +249,12 @@ export const reviewStateSchema = z.object({
    * it requires a full re-render, not a targeted one.
    */
   themeId: z.string().nullable().default(null),
+  /**
+   * Manual script-structure override; null keeps auto-rotation's pick. Changing
+   * it regenerates the script and therefore EVERYTHING downstream (voiceover,
+   * captions, media, render) — the most expensive override there is.
+   */
+  structureId: z.string().nullable().default(null),
   /** Named saved preset this styling came from, if any (for the preset library). */
   stylePresetId: z.string().nullable().default(null),
   style: renderStyleSchema.default({}),

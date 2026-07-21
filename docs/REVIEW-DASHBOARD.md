@@ -109,7 +109,18 @@ ticker, lower-third, transitions and motion graphics all at once, switching it
 requires a **full** re-render — not a targeted one. Selection and stickiness are
 described in [`docs/PIPELINE.md`](PIPELINE.md).
 
-### 5. Text overlay styling
+### 5. Script structure override
+Each video is written against one of 13 script skeletons (opening move,
+throughline, segment count/depth, analysis placement, outro), auto-rotated to
+avoid recent picks. The dashboard shows which was used and allows overriding it
+via `review-state.json.structureId`.
+
+This is the **most expensive override in the system**: changing the skeleton
+regenerates the script, and therefore the voiceover, captions, media and render
+along with it. The dashboard should present it accordingly — not next to the
+cheap per-scene edits. Design: [`services/script-generator/README.md`](../services/script-generator/README.md).
+
+### 6. Text overlay styling
 Caption font/size/color, ticker style, and lower-third style are user-configurable
 (`renderStyleSchema`), applied at render time by the Remotion composition. Any
 unset field falls back to the channel default, so the default look is unchanged.

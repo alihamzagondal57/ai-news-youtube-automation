@@ -12,7 +12,7 @@ The pipeline does **not** auto-publish. After rendering, every video parks at a 
 
 Because every video uses a synthetic voice and an AI-written script, the uploader always sets YouTube's **"altered or synthetic content"** disclosure, and the script generator adds an **original-insight layer** (context, analysis, implications) to every segment rather than reading headlines verbatim — both required to stay monetizable under YouTube's 2026 inauthentic-content policy.
 
-For the same reason, videos don't share one look: an **18-theme design system** (palette, font pairing, ticker, lower-third, transitions, motion graphics) auto-rotates so consecutive uploads aren't the same template re-run, with a manual override in the review dashboard. See [`docs/PIPELINE.md`](docs/PIPELINE.md#theme-selection).
+For the same reason, videos vary on two axes rather than one. An **18-theme design system** (palette, font pairing, ticker, lower-third, transitions, motion graphics) varies how a video *looks*, and a **13-structure script system** (opening move, throughline, segment count and depth, analysis placement, outro) varies how it's *written*. Both auto-rotate to avoid recent picks, with manual overrides in the review dashboard. Structure is the heavier lever: 18 skins over one script skeleton is still one template. See [`docs/PIPELINE.md`](docs/PIPELINE.md#theme-selection).
 
 ## Why this architecture
 

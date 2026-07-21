@@ -8,7 +8,9 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./theme": { "types": "./dist/theme/index.d.ts", "default": "./dist/theme/index.js" },
-    "./src/theme": { "types": "./src/theme/index.ts", "default": "./src/theme/index.ts" }
+    "./src/theme": { "types": "./src/theme/index.ts", "default": "./src/theme/index.ts" },
+    "./script-structure": { "types": "./dist/script-structure/index.d.ts", "default": "./dist/script-structure/index.js" },
+    "./src/script-structure": { "types": "./src/script-structure/index.ts", "default": "./src/script-structure/index.ts" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
