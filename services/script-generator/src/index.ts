@@ -25,7 +25,6 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
     trend,
     structure,
     providers: buildProviders(),
-    maxTokens: config.maxTokens,
     maxAttempts: config.maxAttempts,
     logger,
   });

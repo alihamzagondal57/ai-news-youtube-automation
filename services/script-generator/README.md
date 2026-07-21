@@ -2,7 +2,7 @@
 
 **Runtime:** Node/TypeScript · **Trigger:** GitHub Actions
 
-Turns `trend.json` (or a manually supplied topic) into a broadcast-style news script using the Claude API, with Groq (`llama-3.3-70b`) as a fast/cheap fallback. Enforces:
+Turns `trend.json` (or a manually supplied topic) into a broadcast-style news script via a quality-ranked multi-provider chain (see Providers below). Enforces:
 
 - Runtime target: 5–20 minutes of spoken word (~750–3000 words at ~150 wpm)
 - **Structure varies per video** — the skeleton is selected from a rotating catalog rather than fixed (see below), so consecutive videos don't share an opening move, segment rhythm, or outro
@@ -12,35 +12,38 @@ Turns `trend.json` (or a manually supplied topic) into a broadcast-style news sc
 - Neutral, EU-audience-appropriate tone; no unverified speculation presented as fact
 - **Original-insight layer (required):** every segment's `text` must go beyond restating the source headline — it adds at least one of: context/background, analysis, comparison to prior events, or implications for the EU audience. Verbatim or lightly-reworded headline reading is not acceptable output.
 
-## Models
+## Providers
 
-**Claude Opus 4.8 (`claude-opus-4-8`) is primary; Groq `llama-3.3-70b-versatile` is a resilience fallback only.**
+Multi-provider, quality-ranked fallback chain. **Validation thresholds are identical for every provider** — rank sets the order in which providers are *asked*, never how leniently they are *judged*. A provider whose output fails validation falls through exactly like one that returned an HTTP error, and if every provider is exhausted, generation throws. Nothing weak ships.
 
-Script quality is the product, and the original-insight layer is a *compliance* requirement rather than a stylistic preference — a weaker model that produces generic, surface-level analysis reads as templated, which is precisely the monetization risk this service exists to avoid. Cost isn't the deciding factor at this volume: a script is roughly 2–4K input tokens and 3–5K output, so about **$0.10–0.15 per video** at Opus pricing. At the YouTube quota ceiling of ~6 uploads/day that's ~$20/month — negligible against the cost of a demonetized channel.
+| Rank | Provider | Default model | Cost | Env var |
+|---|---|---|---|---|
+| 0 | Anthropic Claude | `claude-opus-4-8` | Paid, ~$0.10–0.15/script | `ANTHROPIC_API_KEY` |
+| 1 | Google Gemini (AI Studio) | `gemini-2.5-pro` | Free, no card | `GEMINI_API_KEY` |
+| 2 | GitHub Models | `gpt-4o` | Free with GitHub account | `GITHUB_MODELS_TOKEN` |
+| 3 | Cerebras Cloud | `qwen-3-235b-a22b-instruct-2507` | Free, ~1M tokens/day | `CEREBRAS_API_KEY` |
+| — | ~~Groq~~ | — | — | **disabled, see below** |
 
-Groq is kept in the chain for **availability, not quality**: it's used only when Claude errors (outage, rate limit, refusal, truncation). Its output goes through exactly the same validation, so a weaker model that restates its sources gets rejected rather than silently shipping a worse script.
+Run `npx tsx .smoke-test/provider-status.mts` for the live chain and per-provider setup instructions; `npx tsx .smoke-test/qualify-providers.mts` re-tests every configured provider against the bar.
 
-> ### ⚠️ Measured limitation: the Groq fallback cannot currently satisfy these structures
->
-> Live runs against `llama-3.3-70b-versatile` (`.smoke-test/live-test-script-generation.mts`) show a hard output ceiling of roughly **155–165 spoken words per segment and ~1,100–1,350 output tokens per response**, regardless of what the brief asks for:
->
-> | Structure | Required per segment | Model produced |
-> |---|---|---|
-> | `rapid-wire` | 115–170 | 57–66 |
-> | `anchor-brief` | 170–250 | 94–167 |
-> | `long-lens` | 250–400 | 110–164 |
->
-> More segments makes it *worse*, not better — each segment carries `headline`/`visualCue`/`insight` overhead, so a 7-segment structure leaves less room for prose than a 4-segment one. `max_tokens` is not the constraint (8,000 given, ~1,200 used).
->
-> **The compliance checks are satisfiable by this model; the length requirement is not.** On its best attempt every novelty, verbatim, and insight-coverage check passed (novelty 0.65–0.86, shared runs ≤8, coverage 0.50–0.83) and only the word budgets failed. So the fallback fails *loudly* rather than shipping a non-compliant script — correct behaviour, but it means the fallback is largely theoretical today: if Claude is unavailable, the pipeline halts.
->
-> Making it genuinely viable would need per-segment generation (one call per segment) rather than one call per script. Not implemented — flagged rather than hidden.
+### Adding or removing a provider
 
-Request configuration (`src/providers/claude.ts`):
-- **Adaptive thinking** set explicitly — on this model family, omitting `thinking` runs with *no* thinking, which is the wrong default for work that weighs sources and constructs analysis.
-- **`effort: "high"`** — quality-critical work; tunable via `SCRIPT_CLAUDE_EFFORT`.
-- **Streaming** — a 20-minute script plus thinking runs well past the point where a non-streaming request risks an HTTP timeout.
-- **Prompt caching** on the system prompt, which is byte-identical across every video (only the user turn varies).
+One entry in `src/providers/registry.ts`. Nothing else in the service branches on provider identity. Groq, Cerebras and GitHub Models share a single `OpenAICompatibleProvider` adapter (same wire protocol, differing only in base URL, model and token ceiling); Gemini and Claude have their own adapters because their request shapes differ.
+
+Output-token ceilings live on the **provider**, not on the request — they're a property of the plan, not of the script. A global ceiling either over-requests (Groq's free tier returns 413 above 8k/min) or under-requests and truncates a model that could have gone longer.
+
+### Groq: disabled after measured failure
+
+Two models were tested live against the full bar and **both under-write**:
+
+| Model | Required (`the-explainer`) | Produced |
+|---|---|---|
+| `llama-3.3-70b-versatile` | 300–450 words/segment | 94–167 |
+| `openai/gpt-oss-120b` | 300–450 words/segment | 139–196 |
+
+`gpt-oss-120b` additionally truncates: Groq's free tier caps it at **8,000 tokens per minute** (input + output combined), which also limits retries to roughly one per minute.
+
+Critically, the *compliance* checks were satisfiable — on its best attempt `llama-3.3-70b` passed every novelty, verbatim and insight check, and only word budgets failed. The blocker is length, not analysis quality. Rather than relax the bar or ship short scripts, Groq is marked `disabledReason` in the registry: it stays in the catalog so the evidence isn't lost and so `qualify-providers.mts` can re-test it (e.g. on a paid tier), but it is excluded from the live chain.
 
 ## Why the insight layer is mandatory (not stylistic)
 

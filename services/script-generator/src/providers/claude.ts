@@ -6,6 +6,8 @@ export interface ClaudeProviderOptions {
   model: string;
   /** Thinking depth / token spend. Script writing is quality-critical, so this defaults high. */
   effort: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Output-token ceiling; shared with adaptive thinking on this model family. */
+  maxTokens: number;
 }
 
 /**
@@ -25,17 +27,19 @@ export class ClaudeProvider implements ScriptProvider {
   private readonly client: Anthropic;
   private readonly model: string;
   private readonly effort: ClaudeProviderOptions["effort"];
+  private readonly maxTokens: number;
 
   constructor(options: ClaudeProviderOptions) {
     this.client = new Anthropic({ apiKey: options.apiKey });
     this.model = options.model;
     this.effort = options.effort;
+    this.maxTokens = options.maxTokens;
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResult> {
     const stream = this.client.messages.stream({
       model: this.model,
-      max_tokens: request.maxTokens,
+      max_tokens: this.maxTokens,
       thinking: { type: "adaptive" },
       output_config: { effort: this.effort },
       // The system prompt is fixed across every video; only the user turn
@@ -51,7 +55,7 @@ export class ClaudeProvider implements ScriptProvider {
     }
     if (message.stop_reason === "max_tokens") {
       throw new Error(
-        `Claude hit max_tokens (${request.maxTokens}) before finishing — the script was truncated mid-generation`,
+        `Claude hit max_tokens (${this.maxTokens}) before finishing — the script was truncated mid-generation`,
       );
     }
 

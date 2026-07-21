@@ -15,7 +15,6 @@ export interface GenerateOptions {
   structure: ScriptStructure;
   /** Tried in order; a later provider is used only if every earlier one throws. */
   providers: readonly ScriptProvider[];
-  maxTokens: number;
   /** Corrective retries after a validation failure, per provider. */
   maxAttempts?: number;
   logger: Logger;
@@ -45,7 +44,7 @@ export interface GenerateResult {
  * the outcome the whole layer exists to prevent.
  */
 export async function generateScript(options: GenerateOptions): Promise<GenerateResult> {
-  const { jobId, trend, structure, providers, maxTokens, logger } = options;
+  const { jobId, trend, structure, providers, logger } = options;
   const maxAttempts = options.maxAttempts ?? 2;
 
   if (providers.length === 0) {
@@ -71,7 +70,6 @@ export async function generateScript(options: GenerateOptions): Promise<Generate
         completion = await provider.complete({
           system: SYSTEM_PROMPT,
           user: buildUserPrompt({ trend, structure, retryInstructions }),
-          maxTokens,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

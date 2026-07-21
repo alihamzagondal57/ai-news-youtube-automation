@@ -98,7 +98,7 @@ class ScriptedProvider implements ScriptProvider {
   }
 }
 
-const base = { jobId: JOB_ID, trend: TREND, structure: STRUCTURE, maxTokens: 8000, logger: quiet };
+const base = { jobId: JOB_ID, trend: TREND, structure: STRUCTURE, logger: quiet };
 
 // ── Happy path ─────────────────────────────────────────────────────────────
 console.log("HAPPY PATH");
