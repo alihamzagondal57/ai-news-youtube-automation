@@ -12,11 +12,45 @@ Turns `trend.json` (or a manually supplied topic) into a broadcast-style news sc
 - Neutral, EU-audience-appropriate tone; no unverified speculation presented as fact
 - **Original-insight layer (required):** every segment's `text` must go beyond restating the source headline — it adds at least one of: context/background, analysis, comparison to prior events, or implications for the EU audience. Verbatim or lightly-reworded headline reading is not acceptable output.
 
+## Models
+
+**Claude Opus 4.8 (`claude-opus-4-8`) is primary; Groq `llama-3.3-70b-versatile` is a resilience fallback only.**
+
+Script quality is the product, and the original-insight layer is a *compliance* requirement rather than a stylistic preference — a weaker model that produces generic, surface-level analysis reads as templated, which is precisely the monetization risk this service exists to avoid. Cost isn't the deciding factor at this volume: a script is roughly 2–4K input tokens and 3–5K output, so about **$0.10–0.15 per video** at Opus pricing. At the YouTube quota ceiling of ~6 uploads/day that's ~$20/month — negligible against the cost of a demonetized channel.
+
+Groq is kept in the chain for **availability, not quality**: it's used only when Claude errors (outage, rate limit, refusal, truncation). Its output goes through exactly the same validation, so a weaker model that restates its sources gets rejected rather than silently shipping a worse script.
+
+Request configuration (`src/providers/claude.ts`):
+- **Adaptive thinking** set explicitly — on this model family, omitting `thinking` runs with *no* thinking, which is the wrong default for work that weighs sources and constructs analysis.
+- **`effort: "high"`** — quality-critical work; tunable via `SCRIPT_CLAUDE_EFFORT`.
+- **Streaming** — a 20-minute script plus thinking runs well past the point where a non-streaming request risks an HTTP timeout.
+- **Prompt caching** on the system prompt, which is byte-identical across every video (only the user turn varies).
+
 ## Why the insight layer is mandatory (not stylistic)
 
 YouTube's 2026 **inauthentic-content** monetization policy explicitly disqualifies verbatim news reading and generic templated content from monetization. A channel that just narrates headlines over stock footage risks demonetization. The insight layer — genuine added context/analysis/implications per segment — is what makes each video transformative rather than a reading of someone else's reporting. This is a hard requirement on the prompt design, not a nice-to-have, and should be reflected in the system prompt and in any output QA checks (e.g. reject a segment whose `text` is too close to its `sourceSummary`).
 
 The prompt must still keep every added claim grounded in `sourceSummaries` — "original insight" means original *framing and analysis*, never invented facts.
+
+### How it's enforced, not just requested
+
+Asking the model for insight isn't enough — a script that reads the news back would still ship. Every generated script is checked mechanically before it is accepted, and generation **throws rather than returning** a script that fails (`src/validate.ts`):
+
+| Check | Catches | Threshold |
+|---|---|---|
+| Longest shared token run vs sources | Verbatim lifting | > 8 consecutive words |
+| Novel content ratio | Reworded restatement that adds nothing | < 35% new content words |
+| Insight coverage | An `insight` declared but never written into the narration | < 40% of its key terms present in `text` |
+| Insight length / originality | Rubber-stamp or lifted insight | < 6 words, or > 8 words shared with a source |
+| Segment count + per-segment words | Drift from the structural brief | the selected structure's own bounds |
+
+The `insight` field is what makes this possible: each segment must state the specific analysis it adds, and that claim is checked against the spoken text. A model can't declare "adds context on prior rate decisions" without writing it — that's the `insight_not_in_text` check, and it's the difference between a requirement and a request.
+
+Two failure modes are caught by *different* checks on purpose: copy-paste trips the shared-run limit, while paraphrasing around it trips novelty. `test-script-validation.mts` calibrates both against crafted fixtures, and its most important assertion is that a genuinely good script **passes** — a validator with false positives would block every generation.
+
+**What this cannot do:** it cannot judge whether the analysis is correct, insightful, or worth watching. That remains a human-review question (the review gate) and a candidate for an LLM-judge pass later. What it does guarantee is that a script which simply restates its sources cannot reach the pipeline.
+
+Failed validation is retried on the same provider with the specific issues fed back as corrective instructions; only a provider-level error (outage, rate limit, refusal, truncation) falls through to the fallback model.
 
 ## Structural variety (the heavier compliance lever)
 

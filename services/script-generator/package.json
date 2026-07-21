@@ -9,6 +9,9 @@
   },
   "dependencies": {
     "@ai-news/shared": "*",
+    "@anthropic-ai/sdk": "^0.112.4",
+    "dotenv": "^16.4.5",
+    "groq-sdk": "^0.9.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -54,6 +54,15 @@ export const scriptSegmentSchema = z.object({
   /** B-roll sourcing instruction for media-sourcing (e.g. "stock footage of the ECB building") — never rendered as on-screen text. */
   visualCue: z.string(),
   estSeconds: z.number().positive(),
+  /**
+   * The specific original analysis this segment adds beyond its sources —
+   * context, comparison, or implication. NOT spoken and never rendered; it
+   * exists so the original-insight requirement can be checked mechanically
+   * instead of trusted. script-generator requires it and verifies the claimed
+   * insight is actually reflected in `text`; optional here so fixtures and
+   * scripts predating the requirement still validate.
+   */
+  insight: z.string().optional(),
 });
 export type ScriptSegment = z.infer<typeof scriptSegmentSchema>;
 
