@@ -94,88 +94,138 @@ export function validateScript(input: ValidationInput): ValidationIssue[] {
   }
 
   for (const segment of script.segments) {
-    const label = `Segment ${segment.id}`;
-
     if (!segment.headline?.trim() || !segment.visualCue?.trim()) {
       issues.push({
         code: "missing_field",
         segmentId: segment.id,
-        message: `${label} is missing a headline or visualCue.`,
+        message: `Segment ${segment.id} is missing a headline or visualCue.`,
       });
     }
+    issues.push(...segmentTextIssues(segment.id, segment.text, segment.insight, structure, sourceSummaries));
+  }
 
-    const words = wordCount(segment.text);
-    if (words < segments.minWordsPerSegment || words > segments.maxWordsPerSegment) {
+  return issues;
+}
+
+/**
+ * The per-segment prose checks (word budget, insight, derivativeness), shared
+ * between the whole-script check and the per-segment retry loop of two-phase
+ * generation. Keeping one implementation means the retry loop and the final
+ * safety check can never disagree about what "passing" means.
+ */
+export function segmentTextIssues(
+  segmentId: number,
+  text: string,
+  insight: string | undefined,
+  structure: ScriptStructure,
+  sourceSummaries: readonly string[],
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const label = `Segment ${segmentId}`;
+  const { segments } = structure;
+
+  const words = wordCount(text);
+  if (words < segments.minWordsPerSegment || words > segments.maxWordsPerSegment) {
+    issues.push({
+      code: "segment_words",
+      segmentId,
+      message: `${label} is ${words} spoken words; the "${structure.name}" structure requires ${segments.minWordsPerSegment}-${segments.maxWordsPerSegment}.`,
+    });
+  }
+
+  const cleanInsight = insight?.trim() ?? "";
+  if (!cleanInsight) {
+    issues.push({
+      code: "missing_insight",
+      segmentId,
+      message: `${label} declares no insight. Every segment must add context, analysis, comparison, or implications beyond the sources.`,
+    });
+  } else {
+    if (wordCount(cleanInsight) < THRESHOLDS.minInsightWords) {
       issues.push({
-        code: "segment_words",
-        segmentId: segment.id,
-        message: `${label} is ${words} spoken words; the "${structure.name}" structure requires ${segments.minWordsPerSegment}-${segments.maxWordsPerSegment}.`,
+        code: "insight_too_short",
+        segmentId,
+        message: `${label}'s insight is too short to be a real analysis (needs at least ${THRESHOLDS.minInsightWords} words).`,
       });
     }
-
-    // ── Original-insight enforcement ───────────────────────────────────────
-    const insight = segment.insight?.trim() ?? "";
-    if (!insight) {
+    const insightRun = longestSharedRun(cleanInsight, sourceSummaries);
+    if (insightRun > THRESHOLDS.maxInsightSharedRunTokens) {
       issues.push({
-        code: "missing_insight",
-        segmentId: segment.id,
-        message: `${label} declares no insight. Every segment must add context, analysis, comparison, or implications beyond the sources.`,
-      });
-    } else {
-      if (wordCount(insight) < THRESHOLDS.minInsightWords) {
-        issues.push({
-          code: "insight_too_short",
-          segmentId: segment.id,
-          message: `${label}'s insight is too short to be a real analysis (needs at least ${THRESHOLDS.minInsightWords} words).`,
-        });
-      }
-
-      const insightRun = longestSharedRun(insight, sourceSummaries);
-      if (insightRun > THRESHOLDS.maxInsightSharedRunTokens) {
-        issues.push({
-          code: "insight_lifted",
-          segmentId: segment.id,
-          message: `${label}'s insight repeats ${insightRun} consecutive words from a source — it restates rather than adds.`,
-        });
-      }
-
-      const coverage = insightCoverage(insight, segment.text);
-      if (coverage < THRESHOLDS.minInsightCoverage) {
-        issues.push({
-          code: "insight_not_in_text",
-          segmentId: segment.id,
-          message: `${label} claims an insight that does not appear in its spoken text (${Math.round(coverage * 100)}% of the insight's key terms are present; need ${Math.round(THRESHOLDS.minInsightCoverage * 100)}%). Write the analysis into the narration, don't just assert it.`,
-        });
-      }
-    }
-
-    // ── Derivativeness ─────────────────────────────────────────────────────
-    const run = longestSharedRun(segment.text, sourceSummaries);
-    if (run > THRESHOLDS.maxSharedRunTokens) {
-      issues.push({
-        code: "verbatim_lifting",
-        segmentId: segment.id,
-        message: `${label} reproduces ${run} consecutive words from a source. Rewrite in your own words — verbatim reading is what the inauthentic-content policy penalises.`,
+        code: "insight_lifted",
+        segmentId,
+        message: `${label}'s insight repeats ${insightRun} consecutive words from a source — it restates rather than adds.`,
       });
     }
-
-    const novelty = novelContentRatio(segment.text, sourceSummaries);
-    if (novelty < THRESHOLDS.minNovelContentRatio) {
+    const coverage = insightCoverage(cleanInsight, text);
+    if (coverage < THRESHOLDS.minInsightCoverage) {
       issues.push({
-        code: "low_novelty",
-        segmentId: segment.id,
-        message: `${label} is ${Math.round((1 - novelty) * 100)}% source vocabulary — it restates the source rather than adding context or analysis.`,
+        code: "insight_not_in_text",
+        segmentId,
+        message: `${label} claims an insight that does not appear in its spoken text (${Math.round(coverage * 100)}% of the insight's key terms present; need ${Math.round(THRESHOLDS.minInsightCoverage * 100)}%). Write the analysis into the narration, don't just assert it.`,
       });
     }
   }
 
+  const run = longestSharedRun(text, sourceSummaries);
+  if (run > THRESHOLDS.maxSharedRunTokens) {
+    issues.push({
+      code: "verbatim_lifting",
+      segmentId,
+      message: `${label} reproduces ${run} consecutive words from a source. Rewrite in your own words — verbatim reading is what the inauthentic-content policy penalises.`,
+    });
+  }
+
+  const novelty = novelContentRatio(text, sourceSummaries);
+  if (novelty < THRESHOLDS.minNovelContentRatio) {
+    issues.push({
+      code: "low_novelty",
+      segmentId,
+      message: `${label} is ${Math.round((1 - novelty) * 100)}% source vocabulary — it restates the source rather than adding context or analysis.`,
+    });
+  }
+
+  return issues;
+}
+
+/**
+ * Phase-1 checks: segment count and the opening/outro word budgets. The plan
+ * does not contain body prose, so it is not checked for it here — that happens
+ * per segment in phase 2.
+ */
+export function validatePlan(
+  plan: { opening: string; outro: string; segments: readonly unknown[] },
+  structure: ScriptStructure,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const { segments } = structure;
+
+  if (plan.segments.length < segments.minSegments || plan.segments.length > segments.maxSegments) {
+    issues.push({
+      code: "segment_count",
+      message: `Plan has ${plan.segments.length} segments; the "${structure.name}" structure requires ${segments.minSegments}-${segments.maxSegments}.`,
+    });
+  }
+  const openingWords = wordCount(plan.opening);
+  if (openingWords < OPENING_WORDS.min || openingWords > OPENING_WORDS.max) {
+    issues.push({
+      code: "opening_words",
+      message: `Opening is ${openingWords} words; required ${OPENING_WORDS.min}-${OPENING_WORDS.max}.`,
+    });
+  }
+  const outroWords = wordCount(plan.outro);
+  if (outroWords < OUTRO_WORDS.min || outroWords > OUTRO_WORDS.max) {
+    issues.push({
+      code: "outro_words",
+      message: `Outro is ${outroWords} words; required ${OUTRO_WORDS.min}-${OUTRO_WORDS.max}.`,
+    });
+  }
   return issues;
 }
 
 /** Renders issues into corrective instructions for a retry attempt. */
 export function issuesToRetryInstructions(issues: readonly ValidationIssue[]): string {
   return [
-    "Your previous attempt was rejected by automated validation. Fix every issue below and return the corrected script in the same JSON format.",
+    "Your previous attempt was rejected by automated validation. Fix every issue below and return the corrected output in the same format.",
     "",
     ...issues.map((i) => `- ${i.message}`),
   ].join("\n");

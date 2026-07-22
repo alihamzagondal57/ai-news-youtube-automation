@@ -40,7 +40,7 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
       structureId,
       provider: result.providerName,
       model: result.model,
-      attempts: result.attempts,
+      calls: result.calls,
       segments: script.segments.length,
     },
     "Wrote script.json",

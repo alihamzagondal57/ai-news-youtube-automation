@@ -1,9 +1,15 @@
 import type { Logger, Script, Trend } from "@ai-news/shared";
 import type { ScriptStructure } from "@ai-news/shared/script-structure";
-import { buildUserPrompt, SYSTEM_PROMPT } from "./prompt.js";
-import { extractJson, generatedScriptSchema, withSegmentIds, type GeneratedScript } from "./schema.js";
+import { buildPlanPrompt, buildSegmentPrompt, PLAN_SYSTEM_PROMPT, SEGMENT_SYSTEM_PROMPT } from "./prompt.js";
+import { extractJson, parseSegmentProse, planSchema, type GeneratedScript, type Plan } from "./schema.js";
 import type { CompletionResult, ScriptProvider } from "./providers/types.js";
-import { issuesToRetryInstructions, validateScript, type ValidationIssue } from "./validate.js";
+import {
+  issuesToRetryInstructions,
+  segmentTextIssues,
+  validatePlan,
+  validateScript,
+  type ValidationIssue,
+} from "./validate.js";
 import { wordCount } from "./textAnalysis.js";
 
 /** Spoken words per minute, used to derive estSeconds from generated text. */
@@ -13,9 +19,9 @@ export interface GenerateOptions {
   jobId: string;
   trend: Pick<Trend, "topic" | "angle" | "sourceSummaries">;
   structure: ScriptStructure;
-  /** Tried in order; a later provider is used only if every earlier one throws. */
+  /** Tried in order; a later provider is used only if every earlier one fails. */
   providers: readonly ScriptProvider[];
-  /** Corrective retries after a validation failure, per provider. */
+  /** Corrective retries per phase, per provider. */
   maxAttempts?: number;
   logger: Logger;
 }
@@ -24,134 +30,208 @@ export interface GenerateResult {
   script: Script;
   providerName: string;
   model: string;
-  attempts: number;
-  /** Issues from rejected attempts, kept for observability into near-misses. */
+  /** Total provider calls made (plan + segments + retries) on the winning provider. */
+  calls: number;
   discardedIssues: ValidationIssue[][];
 }
 
 /**
- * Generates a script and does not return one that fails validation.
+ * Generates a script two-phase and does not return one that fails validation.
  *
- * Two distinct recovery paths, deliberately kept separate:
- *   - A provider *error* (outage, rate limit, refusal, truncation) falls through
- *     to the next provider.
- *   - A *validation failure* is retried on the same provider with the specific
- *     issues fed back, because the model can usually fix its own structural or
- *     insight shortfall when told exactly what failed.
- *
- * If every provider exhausts its attempts, this throws rather than returning a
- * script that failed the compliance checks — shipping an unvalidated script is
- * the outcome the whole layer exists to prevent.
+ * Phase 1 asks one provider for a plan (title, opening, outro, and a per-segment
+ * skeleton). Phase 2 asks the same provider for each segment's prose in its own
+ * focused call. This exists because a single all-segments-in-one-JSON call makes
+ * every model ration its output budget and under-write each segment by ~2x;
+ * asked for one passage at a time, the same model writes to length. Each phase
+ * is validated and retried against the identical bar; a provider that cannot
+ * produce a passing script falls through to the next, and if the chain is
+ * exhausted this throws rather than returning something that failed the checks.
  */
 export async function generateScript(options: GenerateOptions): Promise<GenerateResult> {
   const { jobId, trend, structure, providers, logger } = options;
-  const maxAttempts = options.maxAttempts ?? 2;
+  const maxAttempts = options.maxAttempts ?? 3;
 
   if (providers.length === 0) {
-    throw new Error("No script providers configured — set ANTHROPIC_API_KEY or GROQ_API_KEY");
+    throw new Error("No script providers configured");
   }
 
   const discardedIssues: ValidationIssue[][] = [];
   const providerErrors: string[] = [];
-  let totalAttempts = 0;
 
   for (const provider of providers) {
-    let retryInstructions: string | undefined;
+    let calls = 0;
+    const track = async (fn: () => Promise<CompletionResult>): Promise<CompletionResult> => {
+      calls++;
+      return fn();
+    };
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      totalAttempts++;
+    try {
+      // ── Phase 1: plan ──────────────────────────────────────────────────────
+      const plan = await generatePlan(provider, trend, structure, maxAttempts, jobId, logger, track, discardedIssues);
 
-      // Only the network call counts as a provider failure. Everything after it
-      // is the model's output being wrong, which is retryable on this same
-      // provider — conflating the two sends a recoverable formatting slip to
-      // the fallback model and burns the primary's remaining attempts.
-      let completion: CompletionResult;
-      try {
-        completion = await provider.complete({
-          system: SYSTEM_PROMPT,
-          user: buildUserPrompt({ trend, structure, retryInstructions }),
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        providerErrors.push(`${provider.name}: ${message}`);
-        logger.warn({ jobId, provider: provider.name, attempt, err }, "Provider call failed; trying next provider");
-        break;
-      }
-
-      try {
-        const parsed = generatedScriptSchema.safeParse(JSON.parse(extractJson(completion.text)));
-        if (!parsed.success) {
-          // A malformed shape is retryable in the same way a validation failure
-          // is — tell the model what was wrong and let it correct itself.
-          retryInstructions = `Your previous output did not match the required JSON shape: ${parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; ")}. Return the corrected script in the documented format.`;
-          logger.warn({ jobId, provider: provider.name, attempt }, "Generated script failed schema parsing");
-          continue;
-        }
-
-        const generated = withSegmentIds(parsed.data);
-        const issues = validateScript({
-          script: generated,
+      // ── Phase 2: one prose call per planned segment ────────────────────────
+      const segments: GeneratedScript["segments"] = [];
+      for (let i = 0; i < plan.segments.length; i++) {
+        const prose = await generateSegment(
+          provider,
+          trend,
           structure,
-          sourceSummaries: trend.sourceSummaries,
-        });
-
-        if (issues.length > 0) {
-          discardedIssues.push(issues);
-          retryInstructions = issuesToRetryInstructions(issues);
-          logger.warn(
-            { jobId, provider: provider.name, attempt, issueCodes: issues.map((i) => i.code) },
-            "Generated script failed validation",
-          );
-          continue;
-        }
-
-        logger.info(
-          {
-            jobId,
-            provider: provider.name,
-            model: completion.model,
-            attempt,
-            segments: generated.segments.length,
-            inputTokens: completion.inputTokens,
-            outputTokens: completion.outputTokens,
-          },
-          "Script generated and validated",
-        );
-
-        return {
-          script: assembleScript(jobId, generated, structure),
-          providerName: provider.name,
-          model: completion.model,
-          attempts: totalAttempts,
+          plan.segments[i],
+          i,
+          plan.segments.length,
+          maxAttempts,
+          jobId,
+          logger,
+          track,
           discardedIssues,
-        };
-      } catch (err) {
-        // Reaching here means the response body was not parseable JSON at all.
-        // Retryable on the same provider: tell the model what went wrong.
-        const message = err instanceof Error ? err.message : String(err);
-        retryInstructions = `Your previous output was not valid JSON (${message}). Return a single JSON object and nothing else — no preamble, no markdown fences.`;
-        logger.warn({ jobId, provider: provider.name, attempt, err }, "Generated script was not parseable JSON");
+        );
+        segments.push({
+          id: i,
+          text: prose.text,
+          insight: prose.insight,
+          headline: plan.segments[i].headline,
+          visualCue: plan.segments[i].visualCue,
+        });
       }
+
+      const generated: GeneratedScript = { title: plan.title, opening: plan.opening, outro: plan.outro, segments };
+
+      // Final belt-and-suspenders: the whole assembled script must pass, not
+      // just each piece in isolation. A phase that passed but drifted from the
+      // structure would be caught here before anything is returned.
+      const finalIssues = validateScript({ script: generated, structure, sourceSummaries: trend.sourceSummaries });
+      if (finalIssues.length > 0) {
+        discardedIssues.push(finalIssues);
+        throw new Error(`assembled script failed final validation: ${finalIssues.map((i) => i.code).join(", ")}`);
+      }
+
+      logger.info(
+        { jobId, provider: provider.name, calls, segments: segments.length },
+        "Script generated and validated (two-phase)",
+      );
+      return {
+        script: assembleScript(jobId, generated, structure),
+        providerName: provider.name,
+        model: plan.model,
+        calls,
+        discardedIssues,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      providerErrors.push(`${provider.name}: ${message}`);
+      logger.warn({ jobId, provider: provider.name, err }, "Provider failed; trying next provider");
     }
   }
 
   throw new Error(
-    `Script generation failed after ${totalAttempts} attempt(s) across ${providers.length} provider(s). ` +
-      (providerErrors.length > 0 ? `Provider errors: ${providerErrors.join(" | ")}. ` : "") +
+    `Script generation failed across ${providers.length} provider(s). ` +
+      (providerErrors.length > 0 ? `Errors: ${providerErrors.join(" | ")}. ` : "") +
       (discardedIssues.length > 0
-        ? `Last validation issues: ${discardedIssues[discardedIssues.length - 1].map((i) => i.message).join(" | ")}`
+        ? `Last issues: ${discardedIssues[discardedIssues.length - 1].map((i) => i.message).join(" | ")}`
         : ""),
   );
 }
 
+async function generatePlan(
+  provider: ScriptProvider,
+  trend: GenerateOptions["trend"],
+  structure: ScriptStructure,
+  maxAttempts: number,
+  jobId: string,
+  logger: Logger,
+  track: (fn: () => Promise<CompletionResult>) => Promise<CompletionResult>,
+  discardedIssues: ValidationIssue[][],
+): Promise<Plan & { model: string }> {
+  let retryInstructions: string | undefined;
+  let lastError = "plan generation exhausted retries";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const completion = await track(() =>
+      provider.complete({
+        system: PLAN_SYSTEM_PROMPT,
+        user: buildPlanPrompt({ trend, structure, retryInstructions }),
+        format: "json",
+      }),
+    );
+
+    const parsed = planSchema.safeParse(safeJson(completion.text));
+    if (!parsed.success) {
+      retryInstructions = `Your previous plan was not valid JSON in the required shape: ${parsed.error?.issues
+        ?.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+        .join("; ")}. Return the corrected plan.`;
+      lastError = "plan failed schema";
+      logger.warn({ jobId, provider: provider.name, attempt }, "Plan failed schema parse");
+      continue;
+    }
+
+    const issues = validatePlan(parsed.data, structure);
+    if (issues.length > 0) {
+      discardedIssues.push(issues);
+      retryInstructions = issuesToRetryInstructions(issues);
+      lastError = `plan issues: ${issues.map((i) => i.code).join(", ")}`;
+      logger.warn({ jobId, provider: provider.name, attempt, codes: issues.map((i) => i.code) }, "Plan failed validation");
+      continue;
+    }
+
+    return { ...parsed.data, model: completion.model };
+  }
+  throw new Error(lastError);
+}
+
+async function generateSegment(
+  provider: ScriptProvider,
+  trend: GenerateOptions["trend"],
+  structure: ScriptStructure,
+  segment: Plan["segments"][number],
+  index: number,
+  total: number,
+  maxAttempts: number,
+  jobId: string,
+  logger: Logger,
+  track: (fn: () => Promise<CompletionResult>) => Promise<CompletionResult>,
+  discardedIssues: ValidationIssue[][],
+): Promise<{ text: string; insight: string }> {
+  let retryInstructions: string | undefined;
+  let lastError = `segment ${index} exhausted retries`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const completion = await track(() =>
+      provider.complete({
+        system: SEGMENT_SYSTEM_PROMPT,
+        user: buildSegmentPrompt({ trend, structure, segment, index: index + 1, total, retryInstructions }),
+        format: "text",
+      }),
+    );
+
+    const prose = parseSegmentProse(completion.text);
+    const issues = segmentTextIssues(index, prose.text, prose.insight, structure, trend.sourceSummaries);
+    if (issues.length > 0) {
+      discardedIssues.push(issues);
+      retryInstructions = issuesToRetryInstructions(issues);
+      lastError = `segment ${index} issues: ${issues.map((i) => i.code).join(", ")}`;
+      logger.warn(
+        { jobId, provider: provider.name, segment: index, attempt, codes: issues.map((i) => i.code) },
+        "Segment failed validation",
+      );
+      continue;
+    }
+    return prose;
+  }
+  throw new Error(lastError);
+}
+
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(extractJson(raw));
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Maps the generated shape onto the pipeline's `script.json` contract.
- *
- * The opening and outro become ordinary segments so downstream steps —
- * voiceover, captions, media sourcing, the renderer — need no special cases for
- * them; they are structurally just the first and last segments of the video.
+ * Maps the generated shape onto the pipeline's `script.json` contract. The
+ * opening and outro become ordinary segments so downstream steps need no
+ * special cases for them.
  */
 export function assembleScript(jobId: string, generated: GeneratedScript, structure: ScriptStructure): Script {
   const estSeconds = (text: string) => Math.max(1, (wordCount(text) / WORDS_PER_MINUTE) * 60);

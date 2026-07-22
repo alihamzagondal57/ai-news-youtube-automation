@@ -1,13 +1,15 @@
-// Exercises the generation orchestration with fake providers: retry-on-
-// validation-failure, fallback-on-provider-error, refusal to return an invalid
-// script, and the mapping onto the script.json contract.
+// Exercises the TWO-PHASE generation orchestration with fake providers:
+// plan-then-per-segment, per-phase retry, provider fallback, the guarantee that
+// an invalid script is never returned, and the mapping onto script.json.
 //
-// No API key and no network — the provider seam is injected.
+// No API key and no network — the provider seam is injected. The mock responds
+// to plan calls (format "json") and segment calls (format "text") differently,
+// exactly as the real providers are driven.
 import { createLogger, scriptSchema } from "@ai-news/shared";
 import { getStructure } from "../services/shared/src/script-structure/index.ts";
 import { generateScript, assembleScript } from "../services/script-generator/src/generate.ts";
+import { INSIGHT_MARKER, type GeneratedScript } from "../services/script-generator/src/schema.ts";
 import type { CompletionRequest, CompletionResult, ScriptProvider } from "../services/script-generator/src/providers/types.ts";
-import type { GeneratedScript } from "../services/script-generator/src/schema.ts";
 
 let failures = 0;
 function check(label: string, condition: boolean, detail: string): void {
@@ -33,179 +35,172 @@ const TREND = {
   ],
 };
 
-/** Builds original prose long enough to satisfy deep-dive's 280-450 word budget. */
-function longSegment(seed: string): string {
-  const sentences = [
-    `${seed} Policymakers have chosen caution over momentum, and the reasoning behind that choice deserves unpacking rather than simple reporting.`,
-    "Three reductions in a row had built an expectation among borrowers that repayment relief would continue arriving on a predictable schedule.",
-    "Holding steady interrupts that rhythm, and expectations once set are expensive to reset, which is precisely why central bankers guard their signalling so carefully.",
-    "For households carrying variable-rate obligations, the practical consequence is immediate: monthly outgoings stop improving, and budgets built on an assumption of continued easing suddenly look optimistic.",
-    "Businesses face a subtler version of the same problem, because investment decisions made under an assumption of cheapening credit now need revisiting against a flatter trajectory.",
-    "There is also a credibility dimension worth naming, since an institution that eases too quickly risks importing the very instability it spent years suppressing.",
-    "Weighed against that, pausing costs relatively little and buys genuine information about whether recent improvements are durable or merely seasonal artefacts.",
-    "The honest summary is that nobody yet knows which reading is correct, and pretending otherwise would misrepresent how much genuine uncertainty remains.",
-    "It helps to remember how unusual the preceding sequence was, because uninterrupted reductions of that length are rare outside genuine emergencies.",
-    "That rarity is itself informative, suggesting the earlier urgency has faded rather than that the underlying problem was solved outright.",
-    "Comparisons with earlier cycles are tempting but treacherous, since the shape of the labour market differs substantially from the last comparable episode.",
-    "Wage growth in particular behaves differently now, and any analysis that ignores that difference will reach confident conclusions on weak foundations.",
-    "Savers occupy the mirror position to borrowers here, and a plateau in rates preserves returns that many had assumed were about to erode.",
-    "Pension funds and insurers, whose liabilities stretch decades ahead, care rather more about the trajectory than about any individual month's decision.",
-    "The practical advice for anyone making a medium-term financial commitment is to plan against a flat path rather than a falling one.",
-    "None of this amounts to a prediction, and the value of the pause is precisely that it preserves optionality in both directions.",
+// ── Valid mock content, sized to the structure ───────────────────────────────
+const OPENING =
+  "Something notable happened in Frankfurt this week, and its consequences reach far beyond the trading floor. Policymakers stepped back from a path they had followed for months, and the reasons behind that choice are worth understanding properly rather than skimming. Here is what changed and why it matters.";
+const OUTRO =
+  "So the moment resolves less than it reveals. Watch the coming weeks for whether this becomes a settled stance or a brief interruption, keep an eye on whether the calmer picture holds, and remember that for anyone whose budget depends on borrowing costs, the ground has just shifted underfoot.";
+
+/** Original prose (low overlap with the sources) padded to a word target, ending with the insight sentence for coverage. */
+function proseOf(targetWords: number): string {
+  const pool = [
+    "Policymakers have chosen caution over momentum, and that choice deserves unpacking rather than simple restatement.",
+    "A sequence of reductions had built an expectation among ordinary borrowers that relief would keep arriving on schedule.",
+    "Pausing interrupts that rhythm, and expectations once formed are expensive to unwind, which is why officials guard their signalling so carefully.",
+    "Businesses feel a quieter version of the same jolt, since spending plans drawn up around ever-cheaper credit suddenly need revisiting.",
+    "There is a credibility dimension too, because moving too fast risks reviving the very instability that years of effort had suppressed.",
+    "Weighed against that danger, waiting costs comparatively little and buys genuine information about whether recent calm is durable.",
+    "Comparisons with earlier episodes tempt the analyst but mislead, because the labour market today behaves unlike its predecessors.",
+    "Savers sit in the mirror position, and a plateau preserves returns many had assumed were about to erode away.",
+    "The honest reading is that nobody yet knows which interpretation proves correct, and pretending otherwise would flatter false certainty.",
+    "Long-horizon institutions care more about the trajectory than any single month, and they are recalibrating quietly rather than loudly.",
   ];
-  return sentences.join(" ");
+  const parts: string[] = [];
+  let i = 0;
+  while (parts.join(" ").split(/\s+/).length < targetWords - 25) {
+    parts.push(pool[i % pool.length]);
+    i++;
+  }
+  // Insight-bearing closer guarantees insightCoverage passes.
+  parts.push(
+    "In short, holding steady after three reductions interrupts borrower expectations, and that matters most for variable-rate households whose budgets had assumed further easing.",
+  );
+  return parts.join(" ");
 }
 
-function goodScript(): GeneratedScript {
-  return {
+const INSIGHT =
+  "Holding steady after three reductions interrupts borrower expectations, which matters most for variable-rate households whose budgets assumed further easing.";
+
+function planJson(overrides: { openingShort?: boolean } = {}): string {
+  const n = STRUCTURE.segments.minSegments;
+  return JSON.stringify({
     title: "ECB Holds Rates As Inflation Cools",
-    opening:
-      "The European Central Bank has paused. After three straight reductions, policymakers left borrowing costs untouched this week, and the decision lands at a moment when the inflation picture looks calmer than it has in two years. What follows examines why the pause happened now and what signal it sends.",
-    outro:
-      "So the pause is less a verdict than a moment to draw breath. Watch the December meeting for whether this becomes a genuine halt, keep an eye on whether prices hold near target through autumn, and remember that for anyone on a variable rate the era of steadily falling repayments has stopped for now.",
-    segments: [0, 1, 2].map((i) => ({
-      id: i,
-      text: longSegment(`Consider the ${["first", "second", "third"][i]} dimension of this decision.`),
+    opening: overrides.openingShort ? "Rates held." : OPENING,
+    outro: OUTRO,
+    segments: Array.from({ length: n }, (_, i) => ({
       headline: `Dimension ${i + 1}`,
       visualCue: "stock footage of the ECB headquarters in Frankfurt",
-      insight:
-        "Holding steady after three reductions interrupts borrower expectations of continued repayment relief, which matters most for variable-rate households whose budgets assumed further easing.",
+      focus: `The ${["first", "second", "third"][i]} facet of the pause and who it touches.`,
     })),
-  };
-}
-
-/** Strips ids — providers return the raw generated shape. */
-function asProviderJson(script: GeneratedScript): string {
-  return JSON.stringify({
-    title: script.title,
-    opening: script.opening,
-    outro: script.outro,
-    segments: script.segments.map(({ id, ...rest }) => rest),
   });
 }
 
-class ScriptedProvider implements ScriptProvider {
-  public calls = 0;
+function proseResponse(opts: { short?: boolean } = {}): string {
+  const target = opts.short ? 60 : Math.round((STRUCTURE.segments.minWordsPerSegment + STRUCTURE.segments.maxWordsPerSegment) / 2);
+  return `${proseOf(target)}\n${INSIGHT_MARKER}\n${INSIGHT}`;
+}
+
+/**
+ * Configurable two-phase mock. Responds to plan calls (format "json") and
+ * segment calls (format "text"). Failure knobs inject specific shortfalls so
+ * the retry and fallback paths can be exercised deterministically.
+ */
+class MockProvider implements ScriptProvider {
+  planCalls = 0;
+  segmentCalls = 0;
   constructor(
     readonly name: string,
-    private readonly responses: Array<string | Error>,
+    private readonly opts: {
+      throwEvery?: boolean;
+      badPlanTimes?: number; // first N plan calls return malformed JSON
+      shortSegmentTimes?: number; // first N segment calls return too-short prose
+      alwaysShort?: boolean; // every segment call returns too-short prose
+    } = {},
   ) {}
-  async complete(_request: CompletionRequest): Promise<CompletionResult> {
-    const response = this.responses[Math.min(this.calls, this.responses.length - 1)];
-    this.calls++;
-    if (response instanceof Error) throw response;
-    return { text: response, model: `${this.name}-model`, inputTokens: 100, outputTokens: 200 };
+
+  async complete(request: CompletionRequest): Promise<CompletionResult> {
+    if (this.opts.throwEvery) throw new Error("503 upstream unavailable");
+    const model = `${this.name}-model`;
+    const mk = (text: string): CompletionResult => ({ text, model, inputTokens: 100, outputTokens: 400 });
+
+    if (request.format === "json") {
+      this.planCalls++;
+      if (this.opts.badPlanTimes && this.planCalls <= this.opts.badPlanTimes) return mk("not json at all");
+      return mk(planJson());
+    }
+    // segment call
+    this.segmentCalls++;
+    if (this.opts.alwaysShort) return mk(proseResponse({ short: true }));
+    if (this.opts.shortSegmentTimes && this.segmentCalls <= this.opts.shortSegmentTimes) return mk(proseResponse({ short: true }));
+    return mk(proseResponse());
   }
 }
 
 const base = { jobId: JOB_ID, trend: TREND, structure: STRUCTURE, logger: quiet };
 
-// ── Happy path ─────────────────────────────────────────────────────────────
-console.log("HAPPY PATH");
-const happy = new ScriptedProvider("primary", [asProviderJson(goodScript())]);
+// ── Happy path ───────────────────────────────────────────────────────────────
+console.log("HAPPY PATH (two-phase)");
+const happy = new MockProvider("primary");
 const happyResult = await generateScript({ ...base, providers: [happy] });
-check("valid script accepted on first attempt", happyResult.attempts === 1, `${happyResult.attempts} attempt`);
-check("provider recorded", happyResult.providerName === "primary", `provider "${happyResult.providerName}"`);
+check(
+  "plan + one call per segment",
+  happy.planCalls === 1 && happy.segmentCalls === 3,
+  `${happy.planCalls} plan call, ${happy.segmentCalls} segment calls`,
+);
+check("total calls reported", happyResult.calls === 4, `${happyResult.calls} calls (1 plan + 3 segments)`);
 check(
   "output satisfies the shared script.json contract",
   scriptSchema.safeParse(happyResult.script).success,
   "scriptSchema.parse succeeds",
 );
+check("structureId recorded", happyResult.script.structureId === "deep-dive", `"${happyResult.script.structureId}"`);
 check(
-  "structureId recorded on the script",
-  happyResult.script.structureId === "deep-dive",
-  `structureId "${happyResult.script.structureId}"`,
-);
-check(
-  "opening and outro become segments",
+  "opening + 3 body + outro = 5 segments",
   happyResult.script.segments.length === 5,
-  `3 body segments + opening + outro = ${happyResult.script.segments.length}`,
+  `${happyResult.script.segments.length} segments`,
 );
 check(
-  "segment ids are sequential from zero",
-  happyResult.script.segments.every((s, i) => s.id === i),
-  `ids ${happyResult.script.segments.map((s) => s.id).join(",")}`,
-);
-check(
-  "estSeconds derived from word count",
-  happyResult.script.segments.every((s) => s.estSeconds > 0),
-  `opening ~${happyResult.script.segments[0].estSeconds.toFixed(1)}s`,
+  "body segments hit the word budget",
+  happyResult.script.segments.slice(1, -1).every((s) => {
+    const w = s.text.split(/\s+/).length;
+    return w >= 280 && w <= 450;
+  }),
+  `body word counts ${happyResult.script.segments.slice(1, -1).map((s) => s.text.split(/\s+/).length).join(", ")}`,
 );
 
-// ── Retry on validation failure ────────────────────────────────────────────
-console.log("\nRETRY ON VALIDATION FAILURE");
-const badThenGood = goodScript();
-const lifted = {
-  ...badThenGood,
-  segments: badThenGood.segments.map((s, i) =>
-    i === 0 ? { ...s, text: `${TREND.sourceSummaries[0]} ${s.text}` } : s,
-  ),
-};
-const retrying = new ScriptedProvider("primary", [asProviderJson(lifted), asProviderJson(goodScript())]);
-const retryResult = await generateScript({ ...base, providers: [retrying] });
+// ── Per-segment retry ────────────────────────────────────────────────────────
+console.log("\nPER-SEGMENT RETRY");
+const retrySeg = new MockProvider("primary", { shortSegmentTimes: 1 });
+const retryResult = await generateScript({ ...base, providers: [retrySeg] });
 check(
-  "a failing script is retried, not returned",
-  retryResult.attempts === 2 && retryResult.discardedIssues.length === 1,
-  `${retryResult.attempts} attempts, ${retryResult.discardedIssues.length} rejected`,
+  "a short segment is retried, not returned",
+  retryResult.calls === 5 && retrySeg.segmentCalls === 4,
+  `${retrySeg.segmentCalls} segment calls (one retry), ${retryResult.calls} total`,
 );
 check(
-  "the rejected attempt was rejected for the right reason",
-  retryResult.discardedIssues[0].some((i) => i.code === "verbatim_lifting"),
-  `codes: ${retryResult.discardedIssues[0].map((i) => i.code).join(", ")}`,
+  "the retry was triggered by a length failure",
+  retryResult.discardedIssues.some((batch) => batch.some((i) => i.code === "segment_words")),
+  "segment_words issue recorded before the good attempt",
 );
 
-// ── Malformed JSON is retried ──────────────────────────────────────────────
-console.log("\nMALFORMED OUTPUT");
-const malformed = new ScriptedProvider("primary", ["not json at all", asProviderJson(goodScript())]);
-const malformedResult = await generateScript({ ...base, providers: [malformed] });
-check("unparseable output is retried", malformedResult.attempts === 2, `${malformedResult.attempts} attempts`);
+// ── Plan retry on malformed JSON ─────────────────────────────────────────────
+console.log("\nPLAN RETRY");
+const badPlan = new MockProvider("primary", { badPlanTimes: 1 });
+const badPlanResult = await generateScript({ ...base, providers: [badPlan] });
+check("malformed plan is retried", badPlan.planCalls === 2, `${badPlan.planCalls} plan calls`);
+check("recovers to a valid script", scriptSchema.safeParse(badPlanResult.script).success, "valid after plan retry");
 
-const fenced = new ScriptedProvider("primary", ["```json\n" + asProviderJson(goodScript()) + "\n```"]);
-const fencedResult = await generateScript({ ...base, providers: [fenced] });
-check(
-  "markdown-fenced JSON is accepted",
-  fencedResult.attempts === 1,
-  "a fenced response doesn't waste a retry",
-);
-
-// ── Provider fallback ──────────────────────────────────────────────────────
+// ── Provider fallback ────────────────────────────────────────────────────────
 console.log("\nPROVIDER FALLBACK");
-const broken = new ScriptedProvider("primary", [new Error("503 upstream unavailable")]);
-const backup = new ScriptedProvider("fallback", [asProviderJson(goodScript())]);
+const broken = new MockProvider("primary", { throwEvery: true });
+const backup = new MockProvider("fallback");
 const fallbackResult = await generateScript({ ...base, providers: [broken, backup] });
-check(
-  "a provider error falls through to the next provider",
-  fallbackResult.providerName === "fallback",
-  `served by "${fallbackResult.providerName}"`,
-);
-check(
-  "the broken provider is not retried",
-  broken.calls === 1,
-  `primary called ${broken.calls}x — retrying a dead endpoint just delays the fallback`,
-);
+check("a provider error falls through", fallbackResult.providerName === "fallback", `served by "${fallbackResult.providerName}"`);
 
-// ── The guarantee: never return an invalid script ──────────────────────────
+// ── The guarantee ────────────────────────────────────────────────────────────
 console.log("\nGUARANTEE: an invalid script is never returned");
-const alwaysBad = new ScriptedProvider("primary", [asProviderJson(lifted)]);
+const alwaysShort = new MockProvider("primary", { alwaysShort: true });
 let threw = false;
-let errorMessage = "";
+let msg = "";
 try {
-  await generateScript({ ...base, providers: [alwaysBad], maxAttempts: 2 });
+  await generateScript({ ...base, providers: [alwaysShort], maxAttempts: 2 });
 } catch (err) {
   threw = true;
-  errorMessage = err instanceof Error ? err.message : String(err);
+  msg = err instanceof Error ? err.message : String(err);
 }
-check(
-  "exhausted retries throw rather than returning a failing script",
-  threw,
-  "shipping an unvalidated script is the outcome the layer exists to prevent",
-);
-check(
-  "the error names the validation failure",
-  errorMessage.includes("consecutive words"),
-  "the thrown error explains what failed, not just that it failed",
-);
-check("retries were actually attempted", alwaysBad.calls === 2, `${alwaysBad.calls} attempts before giving up`);
+check("under-length segments throw rather than shipping", threw, "the length bar is not bypassed");
+check("retries were attempted before giving up", alwaysShort.segmentCalls === 2, `${alwaysShort.segmentCalls} attempts on segment 0`);
+check("the error explains the failure", /segment|words/i.test(msg), "error names the shortfall");
 
 let noProviderThrew = false;
 try {
@@ -213,21 +208,23 @@ try {
 } catch {
   noProviderThrew = true;
 }
-check("no configured providers throws", noProviderThrew, "missing credentials fail loudly at generation time");
+check("no configured providers throws", noProviderThrew, "empty chain fails loudly");
 
-// ── assembleScript in isolation ────────────────────────────────────────────
+// ── Contract mapping ─────────────────────────────────────────────────────────
 console.log("\nCONTRACT MAPPING");
-const assembled = assembleScript(JOB_ID, goodScript(), STRUCTURE);
+const generated: GeneratedScript = {
+  title: "T",
+  opening: OPENING,
+  outro: OUTRO,
+  segments: [0, 1, 2].map((i) => ({ id: i, text: proseOf(350), insight: INSIGHT, headline: `H${i}`, visualCue: "v" })),
+};
+const assembled = assembleScript(JOB_ID, generated, STRUCTURE);
 check(
-  "insight is carried through to script.json",
+  "insight carried through to script.json",
   assembled.segments.slice(1, -1).every((s) => typeof (s as { insight?: string }).insight === "string"),
-  "body segments retain their declared insight for the review dashboard",
+  "body segments retain insight for the review dashboard",
 );
-check(
-  "opening segment uses the title as its headline",
-  assembled.segments[0].headline === assembled.title,
-  `"${assembled.segments[0].headline}"`,
-);
+check("opening segment uses the title as headline", assembled.segments[0].headline === "T", `"${assembled.segments[0].headline}"`);
 
 console.log("");
 console.log(failures === 0 ? "ALL SCRIPT GENERATION TESTS PASSED" : `${failures} failure(s)`);

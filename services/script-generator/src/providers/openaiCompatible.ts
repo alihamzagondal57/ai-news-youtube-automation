@@ -38,14 +38,22 @@ export class OpenAICompatibleProvider implements ScriptProvider {
     this.model = options.model;
     this.maxTokens = options.maxTokens;
     this.jsonMode = options.jsonMode ?? true;
-    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
+    // Two-phase generation fires many calls in quick succession (1 plan + N
+    // segments), which trips free-tier per-minute limits. The SDK retries 429s
+    // with exponential backoff; raise the ceiling so a transient rate limit is
+    // ridden out rather than failing the whole script. A genuinely exhausted
+    // quota still surfaces after the retries.
+    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL, maxRetries: 5 });
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResult> {
+    // Per-request format wins over the constructor default: the plan call wants
+    // JSON, the per-segment prose calls want plain text (JSON mode shortens output).
+    const wantJson = request.format ? request.format === "json" : this.jsonMode;
     const completion = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: this.maxTokens,
-      ...(this.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
+      ...(wantJson ? { response_format: { type: "json_object" as const } } : {}),
       messages: [
         { role: "system", content: request.system },
         { role: "user", content: request.user },

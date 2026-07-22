@@ -60,6 +60,20 @@ const OUTRO_DIRECTIVES: Record<OutroStyle, string> = {
     "Close on what this means for the viewer specifically — costs, choices, or changes that reach them. Concrete, not vague.",
 };
 
+/** Individual directive accessors, for per-segment / two-phase prompting. */
+export function openingDirective(structure: ScriptStructure): string {
+  return OPENING_DIRECTIVES[structure.opening];
+}
+export function throughlineDirective(structure: ScriptStructure): string {
+  return THROUGHLINE_DIRECTIVES[structure.throughline];
+}
+export function analysisDirective(structure: ScriptStructure): string {
+  return ANALYSIS_DIRECTIVES[structure.analysis];
+}
+export function outroDirective(structure: ScriptStructure): string {
+  return OUTRO_DIRECTIVES[structure.outro];
+}
+
 /** The structural instruction block for the script-generation prompt. */
 export function buildStructuralBrief(structure: ScriptStructure): string {
   const { opening, throughline, segments, analysis, outro } = structure;

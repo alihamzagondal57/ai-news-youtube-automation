@@ -16,14 +16,16 @@ import { getStructure } from "../services/shared/src/script-structure/index.ts";
 import { generateScript } from "../services/script-generator/src/generate.ts";
 import { config } from "../services/script-generator/src/config.ts";
 import { providerStatus, resolveModel } from "../services/script-generator/src/providers/registry.ts";
-import { extractJson, generatedScriptSchema, withSegmentIds } from "../services/script-generator/src/schema.ts";
-import { validateScript, THRESHOLDS } from "../services/script-generator/src/validate.ts";
-import {
-  insightCoverage,
-  longestSharedRun,
-  novelContentRatio,
-  wordCount,
-} from "../services/script-generator/src/textAnalysis.ts";
+import { parseSegmentProse } from "../services/script-generator/src/schema.ts";
+import { THRESHOLDS } from "../services/script-generator/src/validate.ts";
+import { wordCount } from "../services/script-generator/src/textAnalysis.ts";
+
+/** Validation codes that may appear in a two-phase failure message. */
+const CODE_TOKENS = [
+  "segment_words", "opening_words", "outro_words", "segment_count",
+  "missing_insight", "insight_too_short", "insight_not_in_text", "insight_lifted",
+  "verbatim_lifting", "low_novelty", "missing_field",
+];
 import type { CompletionRequest, CompletionResult, ScriptProvider } from "../services/script-generator/src/providers/types.ts";
 
 const JOB_ID = "55555555-5555-5555-5555-555555555555";
@@ -106,9 +108,10 @@ async function runOne(provider: ScriptProvider, structureId: string): Promise<St
   const started = Date.now();
   let qualified = false;
   let error: string | undefined;
+  let bodyWords: number[] = [];
 
   try {
-    await generateScript({
+    const result = await generateScript({
       jobId: JOB_ID,
       trend: TREND,
       structure,
@@ -117,44 +120,30 @@ async function runOne(provider: ScriptProvider, structureId: string): Promise<St
       logger: quiet,
     });
     qualified = true;
+    // Body segments only (drop opening/outro at the ends).
+    bodyWords = result.script.segments.slice(1, -1).map((s) => wordCount(s.text));
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
+    // On failure, measure whatever prose the model DID produce, so a length
+    // failure shows the actual word counts the model reached.
+    bodyWords = recorder.responses
+      .filter((r) => r.text.includes("###INSIGHT###") || !r.text.trim().startsWith("{"))
+      .map((r) => wordCount(parseSegmentProse(r.text).text))
+      .filter((n) => n > 0);
   }
 
-  // Diagnose from the best attempt: which checks failed, and what lengths the
-  // model actually produced. Length failures and compliance failures need very
-  // different responses, so they're reported separately.
-  let bestWordRange = "n/a";
-  let failureCodes: string[] = [];
-  let maxOutputTokens = 0;
-
-  for (const response of recorder.responses) {
-    maxOutputTokens = Math.max(maxOutputTokens, response.outputTokens ?? 0);
-    let parsedJson: unknown = null;
-    try {
-      parsedJson = JSON.parse(extractJson(response.text));
-    } catch {
-      failureCodes.push("unparseable_json");
-      continue;
-    }
-    const parsed = generatedScriptSchema.safeParse(parsedJson);
-    if (!parsed.success) {
-      failureCodes.push("bad_shape");
-      continue;
-    }
-    const script = withSegmentIds(parsed.data);
-    const words = script.segments.map((s) => wordCount(s.text));
-    bestWordRange = `${Math.min(...words)}-${Math.max(...words)}`;
-    const issues = validateScript({ script, structure, sourceSummaries: TREND.sourceSummaries });
-    failureCodes = [...new Set(issues.map((i) => i.code))];
-  }
+  // Two-phase failures surface their codes in the thrown message; extract them
+  // so classify() can tell a length failure from a quality one.
+  const failureCodes = error ? CODE_TOKENS.filter((c) => error!.includes(c)) : [];
+  const maxOutputTokens = Math.max(0, ...recorder.responses.map((r) => r.outputTokens ?? 0));
+  const wordRange = bodyWords.length > 0 ? `${Math.min(...bodyWords)}-${Math.max(...bodyWords)}` : "n/a";
 
   return {
     structureId,
     qualified,
     attempts: recorder.responses.length,
     seconds: (Date.now() - started) / 1000,
-    wordRange: bestWordRange,
+    wordRange,
     maxOutputTokens,
     failureCodes,
     error,
@@ -162,8 +151,11 @@ async function runOne(provider: ScriptProvider, structureId: string): Promise<St
 }
 
 async function main() {
+  const only = (process.env.QUALIFY_ONLY ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   const statuses = providerStatus();
-  const configured = statuses.filter((s) => s.configured);
+  const configured = statuses
+    .filter((s) => s.configured)
+    .filter((s) => only.length === 0 || only.includes(s.definition.id));
   const missing = statuses.filter((s) => !s.configured);
 
   console.log("=".repeat(84));

@@ -52,7 +52,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "gemini",
     label: "Google Gemini (AI Studio)",
-    rank: 1,
+    rank: 4,
     envKey: "GEMINI_API_KEY",
     modelEnvKey: "SCRIPT_GEMINI_MODEL",
     // 2.5 Pro has by far the largest output ceiling of the free options, which
@@ -67,7 +67,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "github-models",
     label: "GitHub Models",
-    rank: 2,
+    rank: 3,
     envKey: "GITHUB_MODELS_TOKEN",
     modelEnvKey: "SCRIPT_GITHUB_MODEL",
     defaultModel: "gpt-4o",
@@ -86,7 +86,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "cerebras",
     label: "Cerebras Cloud",
-    rank: 3,
+    rank: 5,
     envKey: "CEREBRAS_API_KEY",
     modelEnvKey: "SCRIPT_CEREBRAS_MODEL",
     // Cerebras serves exactly three chat models (queried live): zai-glm-4.7,
@@ -104,7 +104,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "mistral",
     label: "Mistral (La Plateforme)",
-    rank: 5,
+    rank: 1,
     envKey: "MISTRAL_API_KEY",
     modelEnvKey: "SCRIPT_MISTRAL_MODEL",
     // Mistral's strongest general model; 128k context, comfortably long output.
@@ -120,7 +120,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "openrouter",
     label: "OpenRouter",
-    rank: 6,
+    rank: 2,
     envKey: "OPENROUTER_API_KEY",
     modelEnvKey: "SCRIPT_OPENROUTER_MODEL",
     // Largest free long-output model in OpenRouter's free catalog (queried

@@ -1,10 +1,21 @@
 export interface CompletionRequest {
   system: string;
   user: string;
+  /**
+   * "json" asks the gateway for a JSON object (via response_format /
+   * responseMimeType where supported); "text" asks for plain prose.
+   *
+   * This matters for length, not just parsing: JSON mode measurably suppresses
+   * output length (models ration a total budget across fields), so the
+   * per-segment prose calls use "text" and only the short plan call uses "json".
+   * Default "json" preserves the single-call behaviour for any caller that
+   * doesn't set it.
+   */
+  format?: "json" | "text";
 }
 
 export interface CompletionResult {
-  /** Raw model text; the caller extracts and parses JSON from it. */
+  /** Raw model text; the caller extracts and parses whatever it expects from it. */
   text: string;
   /** Which model actually produced it, for provenance in logs and job records. */
   model: string;

@@ -29,13 +29,15 @@ export class GeminiProvider implements ScriptProvider {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResult> {
+    const wantJson = (request.format ?? "json") === "json";
     const response = await this.client.models.generateContent({
       model: this.model,
       contents: request.user,
       config: {
         systemInstruction: request.system,
         maxOutputTokens: this.maxTokens,
-        responseMimeType: "application/json",
+        // Plain text for the per-segment prose calls; JSON only for the plan.
+        ...(wantJson ? { responseMimeType: "application/json" } : {}),
       },
     });
 
