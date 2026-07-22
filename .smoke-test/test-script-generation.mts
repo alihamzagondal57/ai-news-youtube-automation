@@ -153,7 +153,7 @@ check(
   "body segments hit the word budget",
   happyResult.script.segments.slice(1, -1).every((s) => {
     const w = s.text.split(/\s+/).length;
-    return w >= 280 && w <= 450;
+    return w >= STRUCTURE.segments.minWordsPerSegment && w <= STRUCTURE.segments.maxWordsPerSegment;
   }),
   `body word counts ${happyResult.script.segments.slice(1, -1).map((s) => s.text.split(/\s+/).length).join(", ")}`,
 );

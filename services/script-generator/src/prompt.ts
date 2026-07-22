@@ -117,7 +117,10 @@ export interface SegmentPromptInput {
 export function buildSegmentPrompt(input: SegmentPromptInput): string {
   const { trend, structure, segment, index, total, retryInstructions } = input;
   const { minWordsPerSegment: min, maxWordsPerSegment: max } = structure.segments;
-  const target = Math.round((min + max) / 2);
+  // Target the lower third of the band, not the midpoint: models (Mistral
+  // especially) systematically over-write a stated target by a wide margin, so
+  // aiming low lands the actual output inside the band instead of over the top.
+  const target = Math.round(min + (max - min) * 0.3);
 
   const parts = [
     `# Video topic (context only — write about the focus below)`,

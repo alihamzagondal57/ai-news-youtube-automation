@@ -67,7 +67,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "github-models",
     label: "GitHub Models",
-    rank: 3,
+    rank: 1,
     envKey: "GITHUB_MODELS_TOKEN",
     modelEnvKey: "SCRIPT_GITHUB_MODEL",
     defaultModel: "gpt-4o",
@@ -79,7 +79,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free with any GitHub account (rate-limited)",
     howToGetKey:
       "https://github.com/settings/personal-access-tokens — 'Fine-grained token', no repo access needed, set Account permissions > Models to 'Read-only'. Copy the ghp_/github_pat_ value.",
-    notes: "OpenAI-compatible gateway. Free tier has low daily request caps; fine for ~6 videos/day.",
+    notes: "QUALIFIED (measured): gpt-4o passed both bracket structures — rapid-wire 212-220, the-explainer 334-385 words/segment — with tight length control. Primary free provider.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "github-models", apiKey, baseURL: "https://models.inference.ai.azure.com", model, maxTokens: 8000 }),
   },
@@ -104,7 +104,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
     id: "mistral",
     label: "Mistral (La Plateforme)",
-    rank: 1,
+    rank: 6,
     envKey: "MISTRAL_API_KEY",
     modelEnvKey: "SCRIPT_MISTRAL_MODEL",
     // Mistral's strongest general model; 128k context, comfortably long output.
@@ -114,6 +114,10 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free experiment tier",
     howToGetKey: "https://console.mistral.ai/api-keys — sign up, create a key. Free 'Experiment' plan, no card.",
     notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form.",
+    disabledReason:
+      "OPERATIONAL, not quality: length/insight PASS (the-explainer 428-455 in band), but the free Experiment tier " +
+      "returns 429 partway through a single script's two-phase calls (plan + 6-7 segments + retries), so it cannot " +
+      "reliably finish even one script. Revivable by adding inter-call throttling, or on a paid tier.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "mistral", apiKey, baseURL: "https://api.mistral.ai/v1", model, maxTokens: 8000 }),
   },
@@ -124,14 +128,16 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     envKey: "OPENROUTER_API_KEY",
     modelEnvKey: "SCRIPT_OPENROUTER_MODEL",
     // Largest free long-output model in OpenRouter's free catalog (queried
-    // live): 550B params, 1M context, 65k output ceiling. A model this size is
-    // the best free-tier bet for actually reaching the 300-450 words/segment bar.
-    defaultModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    // live): 120B params, 262k output. Chosen over the 550B sibling because the
+    // 550B ran ~5 min/call — impractical at ~9 calls per script.
+    defaultModel: "nvidia/nemotron-3-super-120b-a12b:free",
     maxOutputTokens: 16000,
     cost: "Free tier (rate-limited: ~50 req/day without credits)",
     howToGetKey: "https://openrouter.ai/keys — sign up, create a key. Free models carry a ':free' suffix.",
-    notes:
-      "Gateway to many models; the :free tier is rate-limited (~50/day) so it's a fallback, not a workhorse. Override model with SCRIPT_OPENROUTER_MODEL.",
+    notes: "Gateway to many models; the :free tier is rate-limited and slow. Override model with SCRIPT_OPENROUTER_MODEL.",
+    disabledReason:
+      "nemotron-3-super-120b passed rapid-wire (215-236) but TRUNCATED the-explainer at the 16k output cap, and ran " +
+      "~6-7 min/structure (~15 min/script) — impractical. A smaller/faster free model might qualify; re-test via SCRIPT_OPENROUTER_MODEL.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "openrouter", apiKey, baseURL: "https://openrouter.ai/api/v1", model, maxTokens: 16000 }),
   },

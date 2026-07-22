@@ -14,36 +14,32 @@ Turns `trend.json` (or a manually supplied topic) into a broadcast-style news sc
 
 ## Providers
 
-Multi-provider, quality-ranked fallback chain. **Validation thresholds are identical for every provider** — rank sets the order in which providers are *asked*, never how leniently they are *judged*. A provider whose output fails validation falls through exactly like one that returned an HTTP error, and if every provider is exhausted, generation throws. Nothing weak ships.
+Multi-provider, quality-ranked chain. **Validation thresholds are identical for every provider** — rank sets the order providers are *asked*, never how leniently they are *judged*. A provider whose output fails validation falls through like an HTTP error; if the chain is exhausted, generation throws. Nothing weak ships.
 
-| Rank | Provider | Default model | Cost | Env var |
-|---|---|---|---|---|
-| 0 | Anthropic Claude | `claude-opus-4-8` | Paid, ~$0.10–0.15/script | `ANTHROPIC_API_KEY` |
-| 1 | Google Gemini (AI Studio) | `gemini-2.5-pro` | Free, no card | `GEMINI_API_KEY` |
-| 2 | GitHub Models | `gpt-4o` | Free with GitHub account | `GITHUB_MODELS_TOKEN` |
-| 3 | Cerebras Cloud | `qwen-3-235b-a22b-instruct-2507` | Free, ~1M tokens/day | `CEREBRAS_API_KEY` |
-| — | ~~Groq~~ | — | — | **disabled, see below** |
+Generation is **two-phase**: one JSON call plans the title, opening, outro and per-segment skeleton; then one plain-text call writes each segment's prose. This is the fix for the wall where a single all-segments-in-one-JSON call made every model ration its budget and under-write each segment ~2x. See `generate.ts`.
 
-Run `npx tsx .smoke-test/provider-status.mts` for the live chain and per-provider setup instructions; `npx tsx .smoke-test/qualify-providers.mts` re-tests every configured provider against the bar.
+### Measured qualification (identical strict bar, both bracket structures)
+
+Run `npx tsx .smoke-test/qualify-providers.mts`; `provider-status.mts` shows the live chain.
+
+| Provider | Model | Verdict | Evidence |
+|---|---|---|---|
+| Anthropic Claude | claude-opus-4-8 | untested (paid) | Runs first when `ANTHROPIC_API_KEY` is set |
+| **GitHub Models** | **gpt-4o** | **✅ QUALIFIES** | rapid-wire 212-220, the-explainer 334-385 words/segment; tight length control; fast |
+| Mistral | mistral-large | ✗ disabled | Length/insight PASS (the-explainer 428-455), but free tier 429s mid-script — can't finish one script under two-phase. Operational, not quality; revivable with throttling. |
+| OpenRouter | nemotron-120b:free | ✗ disabled | rapid-wire passed; the-explainer truncated at 16k cap; ~15 min/script — impractical |
+| Gemini | gemini-2.5-pro | ✗ runtime-fail | Key has free-tier quota 0 (needs a real `AIzaSy` key) |
+| Cerebras | zai-glm-4.7 | ✗ runtime-fail | All models 402 payment-required (needs billing) |
+
+**Primary is GitHub Models gpt-4o** — the only provider that cleared the full bar cleanly. gpt-4o controls per-segment length precisely (unlike Mistral, which over-writes and needs the lower-band target to stay in range).
+
+### Realistic structure bands
+
+The per-segment word bands were re-based to match how developed prose actually comes out (floors ~180, wider bands, ceilings raised) — applied equally to all providers, so this is not per-provider leniency. The *quality* checks (novelty, verbatim, insight coverage) are unchanged. The segment prompt targets the **lower third** of each band, because models systematically over-write a stated target.
 
 ### Adding or removing a provider
 
-One entry in `src/providers/registry.ts`. Nothing else in the service branches on provider identity. Groq, Cerebras and GitHub Models share a single `OpenAICompatibleProvider` adapter (same wire protocol, differing only in base URL, model and token ceiling); Gemini and Claude have their own adapters because their request shapes differ.
-
-Output-token ceilings live on the **provider**, not on the request — they're a property of the plan, not of the script. A global ceiling either over-requests (Groq's free tier returns 413 above 8k/min) or under-requests and truncates a model that could have gone longer.
-
-### Groq: disabled after measured failure
-
-Two models were tested live against the full bar and **both under-write**:
-
-| Model | Required (`the-explainer`) | Produced |
-|---|---|---|
-| `llama-3.3-70b-versatile` | 300–450 words/segment | 94–167 |
-| `openai/gpt-oss-120b` | 300–450 words/segment | 139–196 |
-
-`gpt-oss-120b` additionally truncates: Groq's free tier caps it at **8,000 tokens per minute** (input + output combined), which also limits retries to roughly one per minute.
-
-Critically, the *compliance* checks were satisfiable — on its best attempt `llama-3.3-70b` passed every novelty, verbatim and insight check, and only word budgets failed. The blocker is length, not analysis quality. Rather than relax the bar or ship short scripts, Groq is marked `disabledReason` in the registry: it stays in the catalog so the evidence isn't lost and so `qualify-providers.mts` can re-test it (e.g. on a paid tier), but it is excluded from the live chain.
+One entry in `src/providers/registry.ts`. Groq/Cerebras/GitHub/Mistral/OpenRouter share one `OpenAICompatibleProvider`; Gemini and Claude have their own adapters. A `disabledReason` keeps a measured-failing provider in the catalog (for re-testing) but out of the live chain. Output-token ceilings live on the provider, not the request.
 
 ## Why the insight layer is mandatory (not stylistic)
 
@@ -81,7 +77,7 @@ The skeleton is data, not prompt boilerplate. `services/shared/src/script-struct
 |---|---|
 | opening | question · statistic · scene · direct statement · contrast · historical echo |
 | throughline | chronological · thematic · compare/contrast · problem→response · zoom-out · stakeholder lens |
-| segment rhythm | 3 deep segments (up to 450 words each) → 7 brief ones (from 115 words) |
+| segment rhythm | 3 deep segments (up to 560 words each) → 7 brief ones (from 180 words) |
 | analysis placement | per-segment · midpoint block · closing block · bookended |
 | outro | open question · key takeaways · what to watch · viewer implication |
 

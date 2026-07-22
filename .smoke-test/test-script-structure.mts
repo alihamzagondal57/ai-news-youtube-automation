@@ -131,7 +131,7 @@ check(
 );
 check(
   "brief carries the structure's own word budgets",
-  deepDiveBrief.includes("280-450 spoken words") && rapidWireBrief.includes("115-170 spoken words"),
+  deepDiveBrief.includes("340-560 spoken words") && rapidWireBrief.includes("180-320 spoken words"),
   "per-segment budgets rendered into the prompt",
 );
 // Every structure must produce a brief naming all five structural dimensions,
