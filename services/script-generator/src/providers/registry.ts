@@ -71,7 +71,11 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     envKey: "GITHUB_MODELS_TOKEN",
     modelEnvKey: "SCRIPT_GITHUB_MODEL",
     defaultModel: "gpt-4o",
-    maxOutputTokens: 8000,
+    // GitHub Models' free tier caps gpt-4o output at 4,096 tokens. A full
+    // the-explainer script (~2,900 words ≈ 3,800 tokens) sits right against
+    // that ceiling, so this provider is expected to truncate on the longest
+    // structures — the qualification run will show whether it does.
+    maxOutputTokens: 4000,
     cost: "Free with any GitHub account (rate-limited)",
     howToGetKey:
       "https://github.com/settings/personal-access-tokens — 'Fine-grained token', no repo access needed, set Account permissions > Models to 'Read-only'. Copy the ghp_/github_pat_ value.",
@@ -85,16 +89,51 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     rank: 3,
     envKey: "CEREBRAS_API_KEY",
     modelEnvKey: "SCRIPT_CEREBRAS_MODEL",
-    // Deliberately NOT llama-3.3-70b: that exact model was measured unable to
-    // reach the word budgets on Groq, and the weights are the same here.
-    defaultModel: "qwen-3-235b-a22b-instruct-2507",
+    // Cerebras serves exactly three chat models (queried live): zai-glm-4.7,
+    // gpt-oss-120b, gemma-4-31b. GLM-4.7 is the strongest for long-form prose.
+    // Deliberately NOT llama-3.3-70b (not offered here anyway), which failed the
+    // length bar on Groq.
+    defaultModel: "zai-glm-4.7",
     maxOutputTokens: 8000,
     cost: "Free, ~1M tokens/day",
     howToGetKey: "https://cloud.cerebras.ai — sign up, then API Keys > Create. No credit card.",
-    notes:
-      "Its headline free model is llama-3.3-70b, the same weights that failed the length bar on Groq — defaulted to a larger model instead.",
+    notes: "Serves 3 models (zai-glm-4.7, gpt-oss-120b, gemma-4-31b); GLM-4.7 chosen for long-form.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "cerebras", apiKey, baseURL: "https://api.cerebras.ai/v1", model, maxTokens: 8000 }),
+  },
+  {
+    id: "mistral",
+    label: "Mistral (La Plateforme)",
+    rank: 5,
+    envKey: "MISTRAL_API_KEY",
+    modelEnvKey: "SCRIPT_MISTRAL_MODEL",
+    // Mistral's strongest general model; 128k context, comfortably long output.
+    // OpenAI-compatible endpoint, so it uses the shared adapter.
+    defaultModel: "mistral-large-latest",
+    maxOutputTokens: 8000,
+    cost: "Free experiment tier",
+    howToGetKey: "https://console.mistral.ai/api-keys — sign up, create a key. Free 'Experiment' plan, no card.",
+    notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form.",
+    create: (apiKey, model) =>
+      new OpenAICompatibleProvider({ name: "mistral", apiKey, baseURL: "https://api.mistral.ai/v1", model, maxTokens: 8000 }),
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    rank: 6,
+    envKey: "OPENROUTER_API_KEY",
+    modelEnvKey: "SCRIPT_OPENROUTER_MODEL",
+    // Largest free long-output model in OpenRouter's free catalog (queried
+    // live): 550B params, 1M context, 65k output ceiling. A model this size is
+    // the best free-tier bet for actually reaching the 300-450 words/segment bar.
+    defaultModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    maxOutputTokens: 16000,
+    cost: "Free tier (rate-limited: ~50 req/day without credits)",
+    howToGetKey: "https://openrouter.ai/keys — sign up, create a key. Free models carry a ':free' suffix.",
+    notes:
+      "Gateway to many models; the :free tier is rate-limited (~50/day) so it's a fallback, not a workhorse. Override model with SCRIPT_OPENROUTER_MODEL.",
+    create: (apiKey, model) =>
+      new OpenAICompatibleProvider({ name: "openrouter", apiKey, baseURL: "https://openrouter.ai/api/v1", model, maxTokens: 16000 }),
   },
   {
     id: "groq",

@@ -75,6 +75,31 @@ interface StructureOutcome {
   error?: string;
 }
 
+/**
+ * Sorts a failure into one actionable category. The whole point of this
+ * harness is to tell a rate-limit blip apart from a genuine quality failure —
+ * the first is retryable and says nothing about the provider's ceiling; the
+ * second is a real disqualification.
+ */
+type Classification = "PASS" | "RATE-LIMIT" | "QUOTA" | "TRUNCATED" | "LENGTH" | "QUALITY" | "FORMAT" | "SETUP" | "ERROR";
+
+function classify(outcome: StructureOutcome): Classification {
+  if (outcome.qualified) return "PASS";
+  const err = outcome.error ?? "";
+  const codes = new Set(outcome.failureCodes);
+
+  if (codes.has("provider_setup")) return "SETUP";
+  // Error-string signals first: these usually mean zero completed attempts.
+  if (/quota|limit:\s*0|insufficient|billing|payment required|402/i.test(err)) return "QUOTA";
+  if (/429|rate.?limit|resource_exhausted|too many requests/i.test(err)) return "RATE-LIMIT";
+  if (/truncat|hit max_tokens|hit maxoutputtokens/i.test(err)) return "TRUNCATED";
+  // Then validation-code signals from a parsed-but-rejected attempt.
+  if ([...codes].some((c) => c.startsWith("segment_") || c.startsWith("opening_") || c.startsWith("outro_"))) return "LENGTH";
+  if ([...codes].some((c) => c.includes("insight") || c === "verbatim_lifting" || c === "low_novelty")) return "QUALITY";
+  if (codes.has("unparseable_json") || codes.has("bad_shape") || codes.has("missing_field")) return "FORMAT";
+  return "ERROR";
+}
+
 async function runOne(provider: ScriptProvider, structureId: string): Promise<StructureOutcome> {
   const structure = getStructure(structureId);
   const recorder = new RecordingProvider(provider);
@@ -198,9 +223,9 @@ async function main() {
       const outcome = await runOne(provider, structureId);
       outcomes.push(outcome);
 
-      const verdict = outcome.qualified ? "QUALIFIED" : "REJECTED ";
+      const cls = classify(outcome);
       console.log(
-        `  ${structureId.padEnd(16)} ${verdict}  ${outcome.attempts} attempt(s), ${outcome.seconds.toFixed(1)}s, ` +
+        `  ${structureId.padEnd(16)} ${cls.padEnd(11)} ${outcome.attempts} attempt(s), ${outcome.seconds.toFixed(1)}s, ` +
           `words/segment ${outcome.wordRange}, peak ${outcome.maxOutputTokens} out-tokens`,
       );
       if (!outcome.qualified) {
@@ -208,7 +233,7 @@ async function main() {
           console.log(`  ${"".padEnd(16)} failed: ${outcome.failureCodes.join(", ")}`);
         }
         if (outcome.error && outcome.failureCodes.length === 0) {
-          console.log(`  ${"".padEnd(16)} error: ${outcome.error.slice(0, 160)}`);
+          console.log(`  ${"".padEnd(16)} error: ${outcome.error.replace(/\s+/g, " ").slice(0, 200)}`);
         }
       }
     }
@@ -216,24 +241,42 @@ async function main() {
     console.log("");
   }
 
-  // ── Verdict ──────────────────────────────────────────────────────────────
+  // ── Comparison table ──────────────────────────────────────────────────────
   console.log("=".repeat(84));
-  console.log("VERDICT — a provider qualifies only if it passes EVERY structure");
+  console.log("COMPARISON — one row per provider, one column per structure");
   console.log("=".repeat(84));
+  console.log(`${"provider".padEnd(15)}${"model".padEnd(26)}${STRUCTURE_IDS.map((s) => s.slice(0, 13).padEnd(15)).join("")}overall`);
+  console.log("-".repeat(84));
+
   const keep: string[] = [];
   const drop: string[] = [];
 
-  for (const { definition } of configured) {
+  for (const { definition, model } of configured) {
     const outcomes = results.get(definition.id) ?? [];
     const allPassed = outcomes.length > 0 && outcomes.every((o) => o.qualified);
     (allPassed ? keep : drop).push(definition.id);
-    const detail = outcomes.map((o) => `${o.structureId}:${o.qualified ? "pass" : "fail"}`).join("  ");
-    console.log(`  ${allPassed ? "KEEP" : "DROP"}  ${definition.id.padEnd(16)} ${detail}`);
+
+    const cells = STRUCTURE_IDS.map((sid) => {
+      const o = outcomes.find((x) => x.structureId === sid);
+      if (!o) return "—".padEnd(15);
+      const c = classify(o);
+      // Append the produced word range on length failures — it's the number
+      // that actually decides these.
+      const suffix = c === "LENGTH" || c === "TRUNCATED" ? ` ${o.wordRange}w` : "";
+      return (c + suffix).padEnd(15);
+    });
+
+    console.log(
+      `${definition.id.slice(0, 14).padEnd(15)}${model.slice(0, 25).padEnd(26)}${cells.join("")}${allPassed ? "QUALIFIES" : "rejected"}`,
+    );
   }
 
   console.log("");
-  console.log(`KEEP: ${keep.length > 0 ? keep.join(", ") : "(none)"}`);
-  console.log(`DROP: ${drop.length > 0 ? drop.join(", ") : "(none)"}`);
+  console.log("Failure legend: LENGTH=under word budget · TRUNCATED=cut off at token cap ·");
+  console.log("QUALITY=novelty/verbatim/insight · RATE-LIMIT=429 (retryable) · QUOTA=no free allowance");
+  console.log("");
+  console.log(`QUALIFIES (usable): ${keep.length > 0 ? keep.join(", ") : "(none)"}`);
+  console.log(`REJECTED:           ${drop.length > 0 ? drop.join(", ") : "(none)"}`);
   console.log("=".repeat(84));
 }
 
