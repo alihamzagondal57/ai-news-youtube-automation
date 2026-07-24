@@ -163,21 +163,23 @@ async function main() {
       `next auto-pick won't immediately repeat the hand-picked "${overrideVoice}"`,
     );
 
-    // ── An out-of-pool override (e.g. a hand-picked Edge voice) is honored but
-    //    does NOT enter the Kokoro rotation history ────────────────────────────
-    const edgeJob = jobId(50);
-    await store.putJson(store.jobKey(edgeJob, "review-state.json"), { voiceId: "en-GB-RyanNeural" });
-    const historyBeforeEdge = (await store.getJsonIfExists(VOICE_ROTATION_KEY, rotationSchema))!.recentVoiceIds.join(",");
-    const edgeResolved = await resolveJobVoice(store, edgeJob, quiet);
-    const historyAfterEdge = (await store.getJsonIfExists(VOICE_ROTATION_KEY, rotationSchema))!.recentVoiceIds.join(",");
+    // ── An out-of-pool override (a library voice outside the rotation pool,
+    //    e.g. a lower-graded Kokoro voice) is honored but does NOT enter the
+    //    rotation history ───────────────────────────────────────────────────────
+    const outOfPoolVoice = "kokoro-bm-fable"; // in the library, not in VOICE_ROTATION_POOL
+    const nonPoolJob = jobId(50);
+    await store.putJson(store.jobKey(nonPoolJob, "review-state.json"), { voiceId: outOfPoolVoice });
+    const historyBeforeNonPool = (await store.getJsonIfExists(VOICE_ROTATION_KEY, rotationSchema))!.recentVoiceIds.join(",");
+    const nonPoolResolved = await resolveJobVoice(store, nonPoolJob, quiet);
+    const historyAfterNonPool = (await store.getJsonIfExists(VOICE_ROTATION_KEY, rotationSchema))!.recentVoiceIds.join(",");
     check(
       "out-of-pool override is honored",
-      edgeResolved === "en-GB-RyanNeural",
-      `operator can hand-pick a non-pool voice ("${edgeResolved}") for a local render`,
+      nonPoolResolved === outOfPoolVoice && !VOICE_ROTATION_POOL.includes(outOfPoolVoice),
+      `operator can hand-pick a non-pool library voice ("${nonPoolResolved}")`,
     );
     check(
       "out-of-pool override does not pollute the rotation pool history",
-      historyBeforeEdge === historyAfterEdge,
+      historyBeforeNonPool === historyAfterNonPool,
       "state/voice-rotation.json still holds only pool voices",
     );
 

@@ -17,10 +17,10 @@ function psLiteral(value: string): string {
 
 /**
  * The offline fallback engine: Windows System.Speech (SAPI). No network, no key,
- * always available on Windows — which is exactly why it exists. The neural Edge
- * voices are the real library; this is the "the pipeline still produces a
- * voiceover when Edge is unreachable" safety net, and the engine the tests can
- * always run to generate genuine audio.
+ * no model weights, always available on Windows — which is exactly why it
+ * exists. The neural Kokoro voices are the real library; this is the "the
+ * pipeline still produces a voiceover on a host that can't load Kokoro" safety
+ * net, and an engine the tests can always run to generate genuine audio.
  */
 export class SapiEngine implements TtsEngine {
   readonly kind = "sapi" as const;

@@ -6,7 +6,7 @@ import type { LibraryVoice } from "../voices.js";
  * implementation of this interface plus a registry entry.
  */
 export interface TtsEngine {
-  readonly kind: "edge" | "kokoro" | "sapi";
+  readonly kind: "kokoro" | "sapi";
 
   /**
    * Whether this engine can run right now — network reachable, binary/runtime
@@ -18,7 +18,7 @@ export interface TtsEngine {
 
   /**
    * Synthesize `text` in `voice` to an audio file at `outputPath`. The output
-   * format may be anything ffmpeg can read (Edge emits mp3, SAPI emits wav); the
+   * format may be anything ffmpeg can read (Kokoro and SAPI both emit wav); the
    * caller transcodes to the canonical format afterward. Must throw on failure
    * rather than write a truncated or empty file.
    */

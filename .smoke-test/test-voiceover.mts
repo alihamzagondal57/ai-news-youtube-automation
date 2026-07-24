@@ -1,8 +1,7 @@
 // Pure-logic checks for the voiceover service — no network, no audio, no store,
-// so it runs in a second. Covers the three things unit-testable without a live
-// TTS endpoint: the Edge DRM token derivation, the segment-timing math that the
-// render pipeline depends on, and the voice library's integrity.
-import { __test } from "../services/voiceover/src/engines/edge.ts";
+// so it runs in a second. Covers the things unit-testable without synthesizing:
+// the Kokoro chunk splitter + WAV encoder, the segment-timing math the render
+// pipeline depends on, the voice library's integrity, and voice rotation.
 import { __test as kokoroTest } from "../services/voiceover/src/engines/kokoro.ts";
 import { buildSegmentTiming, assertTimingInvariants, type TimelinePiece } from "../services/voiceover/src/timing.ts";
 import { VOICE_LIBRARY, DEFAULT_VOICE_ID, getVoice, resolveVoiceId, sapiEquivalent, kokoroEquivalent, VOICE_ROTATION_POOL, VOICE_AVOID_WINDOW, selectVoice, EMPTY_VOICE_ROTATION } from "../services/voiceover/src/voices.ts";
@@ -16,47 +15,23 @@ function check(label: string, condition: boolean, detail: string): void {
   }
 }
 
-// ── Edge DRM token ───────────────────────────────────────────────────────────
-const { generateSecMsGec, splitForRequests } = __test;
-const now = Date.UTC(2026, 6, 24, 9, 0, 3); // arbitrary fixed instant
-const token = generateSecMsGec(now);
-check("Sec-MS-GEC is 64 uppercase hex chars", /^[0-9A-F]{64}$/.test(token), token.slice(0, 16) + "…");
-check(
-  "token is stable within a 5-minute window",
-  generateSecMsGec(now) === generateSecMsGec(now + 90_000),
-  "same token at +90s (same 5-min bucket)",
-);
-check(
-  "token rotates across 5-minute windows",
-  generateSecMsGec(now) !== generateSecMsGec(now + 5 * 60_000),
-  "different token 5 minutes later",
-);
-
-// Splitting keeps every sentence and respects the size cap.
-const long = Array.from({ length: 40 }, (_, i) => `This is sentence number ${i} in a very long narration segment.`).join(" ");
-const parts = splitForRequests(long, 300);
-check("long text splits into multiple request chunks", parts.length > 1, `${parts.length} chunks`);
-check("every chunk is within the size cap", parts.every((p) => p.length <= 300 + 80), `max chunk ${Math.max(...parts.map((p) => p.length))} chars`);
-check("split is lossless (word count preserved)", parts.join(" ").split(/\s+/).length === long.split(/\s+/).length, "no words dropped across the split");
-const short = "One short sentence.";
-check("short text stays a single chunk", splitForRequests(short).length === 1, "1 chunk");
-
 // ── Voice library ────────────────────────────────────────────────────────────
 check("library has a useful spread of voices", VOICE_LIBRARY.length >= 10, `${VOICE_LIBRARY.length} voices`);
 check("voice ids are unique", new Set(VOICE_LIBRARY.map((v) => v.id)).size === VOICE_LIBRARY.length, "no duplicate ids");
 check("default voice exists in the library", VOICE_LIBRARY.some((v) => v.id === DEFAULT_VOICE_ID), DEFAULT_VOICE_ID);
 check("library offers both genders", new Set(VOICE_LIBRARY.map((v) => v.gender)).size === 2, "male and female present");
 check(
-  "library offers multiple accents",
-  new Set(VOICE_LIBRARY.filter((v) => v.engine === "edge").map((v) => v.accent)).size >= 4,
-  `${new Set(VOICE_LIBRARY.filter((v) => v.engine === "edge").map((v) => v.accent)).size} neural accents`,
+  "library offers multiple neural accents",
+  new Set(VOICE_LIBRARY.filter((v) => v.engine === "kokoro").map((v) => v.accent)).size >= 2,
+  `${new Set(VOICE_LIBRARY.filter((v) => v.engine === "kokoro").map((v) => v.accent)).size} Kokoro accents`,
 );
+check("no removed Edge voices linger", VOICE_LIBRARY.every((v) => v.engine === "kokoro" || v.engine === "sapi"), "library is Kokoro + SAPI only");
 check("every gender has an offline fallback voice", ["male", "female"].every((g) => VOICE_LIBRARY.some((v) => v.engine === "sapi" && v.gender === g)), "sapi male + female both present");
 check("sapi voices carry a systemName", VOICE_LIBRARY.filter((v) => v.engine === "sapi").every((v) => Boolean(v.systemName)), "offline voices name their system voice");
 check("getVoice throws on an unknown id", (() => { try { getVoice("nope"); return false; } catch { return true; } })(), "unknown id rejected");
-check("resolveVoiceId honours an override", resolveVoiceId("en-US-GuyNeural") === "en-US-GuyNeural", "override wins");
+check("resolveVoiceId honours an override", resolveVoiceId("kokoro-af-heart") === "kokoro-af-heart", "override wins");
 check("resolveVoiceId falls back to the default", resolveVoiceId(null) === DEFAULT_VOICE_ID, "null -> default");
-check("sapiEquivalent keeps gender and is offline", sapiEquivalent(getVoice("en-GB-SoniaNeural")).engine === "sapi" && sapiEquivalent(getVoice("en-GB-SoniaNeural")).gender === "female", "female neural -> female sapi");
+check("sapiEquivalent keeps gender and is offline", sapiEquivalent(getVoice("kokoro-bf-emma")).engine === "sapi" && sapiEquivalent(getVoice("kokoro-bf-emma")).gender === "female", "female neural -> female sapi");
 
 // Kokoro voices are wired into the library as a first-class engine.
 const kokoroVoices = VOICE_LIBRARY.filter((v) => v.engine === "kokoro");
@@ -67,7 +42,7 @@ check("kokoroEquivalent keeps gender and is Kokoro", kokoroEquivalent(getVoice("
 
 // ── Voice rotation pool (the third variety axis) ─────────────────────────────
 const poolVoices = VOICE_ROTATION_POOL.map((id) => getVoice(id));
-check("rotation pool is all self-hosted Kokoro voices", poolVoices.every((v) => v.engine === "kokoro"), "no Edge voice can be auto-picked (would 403 in CI)");
+check("rotation pool is all self-hosted Kokoro voices", poolVoices.every((v) => v.engine === "kokoro"), "auto-rotation stays fully self-hosted (no egress/license risk)");
 check("rotation pool spans both accents", new Set(poolVoices.map((v) => v.accent)).size >= 2, [...new Set(poolVoices.map((v) => v.accent))].join(" + "));
 check("rotation pool spans both genders", new Set(poolVoices.map((v) => v.gender)).size === 2, "male + female both in rotation");
 check("default voice is in the rotation pool", VOICE_ROTATION_POOL.includes(DEFAULT_VOICE_ID), DEFAULT_VOICE_ID);

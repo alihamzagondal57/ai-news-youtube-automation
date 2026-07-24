@@ -2,25 +2,25 @@
  * The voice library.
  *
  * A curated catalog of narrator voices the review dashboard offers per video
- * (review-state.json.voiceId), with a pipeline default. Two kinds of engine
- * back these:
+ * (review-state.json.voiceId), auto-rotated when no override is set. Two kinds
+ * of engine back these:
  *
- *  - `edge`  — Microsoft Edge neural voices (the real library: natural,
- *              multi-accent, free, no key). This is what an operator picks.
- *  - `sapi`  — the two offline Windows System.Speech voices. Robotic by
- *              comparison, but they need no network, so they exist as a
- *              last-resort fallback and as the engine the tests can always run.
+ *  - `kokoro` — self-hosted Kokoro-82M neural voices (Apache-2.0, run on CPU,
+ *               no egress/key/license risk). The real library — what production
+ *               uses and what the operator picks from.
+ *  - `sapi`   — the two offline Windows System.Speech voices. Robotic by
+ *               comparison, but they need no model weights, so they exist as a
+ *               last-resort fallback and the engine the tests can always run.
  *
- * Only English voices are listed: the channel is EU-news in English, and a
- * British narrator "reads as European" to that audience (hence the default).
- * The spread across GB/IE/US/AU/CA and male/female is deliberate — the review
- * dashboard needs genuine variety to choose from, not one voice with a toggle.
+ * Only English voices are listed: the channel is EU-news in English, spanning
+ * American and British accents and both genders so the rotation and the review
+ * dashboard have genuine variety, not one voice with a toggle.
  */
 
 import { rotate } from "@ai-news/shared";
 
 export type VoiceGender = "male" | "female";
-export type VoiceEngineKind = "edge" | "kokoro" | "sapi";
+export type VoiceEngineKind = "kokoro" | "sapi";
 
 export interface LibraryVoice {
   /** Stable id stored in review-state.json.voiceId and passed to the engine. */
@@ -37,7 +37,7 @@ export interface LibraryVoice {
   /**
    * For sapi voices: the substring matched against an installed
    * System.Speech voice name (e.g. "David" matches "Microsoft David Desktop").
-   * Unused for edge voices, whose `id` is the Edge voice ShortName as-is.
+   * Unused for kokoro voices, which carry `engineVoice` instead.
    */
   systemName?: string;
   /**
@@ -49,28 +49,12 @@ export interface LibraryVoice {
 }
 
 export const VOICE_LIBRARY: readonly LibraryVoice[] = [
-  // -- British (the house sound) --
-  { id: "en-GB-RyanNeural", label: "Ryan — British, male", gender: "male", locale: "en-GB", accent: "British", engine: "edge" },
-  { id: "en-GB-SoniaNeural", label: "Sonia — British, female", gender: "female", locale: "en-GB", accent: "British", engine: "edge" },
-  { id: "en-GB-ThomasNeural", label: "Thomas — British, male", gender: "male", locale: "en-GB", accent: "British", engine: "edge" },
-  { id: "en-GB-LibbyNeural", label: "Libby — British, female", gender: "female", locale: "en-GB", accent: "British", engine: "edge" },
-  // -- Irish --
-  { id: "en-IE-ConnorNeural", label: "Connor — Irish, male", gender: "male", locale: "en-IE", accent: "Irish", engine: "edge" },
-  { id: "en-IE-EmilyNeural", label: "Emily — Irish, female", gender: "female", locale: "en-IE", accent: "Irish", engine: "edge" },
-  // -- American --
-  { id: "en-US-GuyNeural", label: "Guy — American, male", gender: "male", locale: "en-US", accent: "American", engine: "edge" },
-  { id: "en-US-JennyNeural", label: "Jenny — American, female", gender: "female", locale: "en-US", accent: "American", engine: "edge" },
-  { id: "en-US-AriaNeural", label: "Aria — American, female", gender: "female", locale: "en-US", accent: "American", engine: "edge" },
-  // -- Australian --
-  { id: "en-AU-WilliamNeural", label: "William — Australian, male", gender: "male", locale: "en-AU", accent: "Australian", engine: "edge" },
-  { id: "en-AU-NatashaNeural", label: "Natasha — Australian, female", gender: "female", locale: "en-AU", accent: "Australian", engine: "edge" },
-  // -- Canadian --
-  { id: "en-CA-LiamNeural", label: "Liam — Canadian, male", gender: "male", locale: "en-CA", accent: "Canadian", engine: "edge" },
-  { id: "en-CA-ClaraNeural", label: "Clara — Canadian, female", gender: "female", locale: "en-CA", accent: "Canadian", engine: "edge" },
   // -- Kokoro-82M (self-hosted neural, Apache-2.0, runs on CPU, 24kHz native) --
-  // The pipeline's dependency-free neural option: no egress, no key, identical
+  // The pipeline's neural voices: no egress, no key, no license risk, identical
   // locally and on the render VM. `engineVoice` is the model's own voice name;
   // the parenthetical is Kokoro's published quality grade for that voice.
+  // (An earlier Microsoft Edge neural library was removed — datacenter IPs 403
+  // it, and it has no terms permitting commercial use; see docs/LICENSING.md.)
   { id: "kokoro-af-heart", label: "Heart — American, female (Kokoro, grade A)", gender: "female", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "af_heart" },
   { id: "kokoro-af-bella", label: "Bella — American, female (Kokoro, grade A-)", gender: "female", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "af_bella" },
   { id: "kokoro-am-michael", label: "Michael — American, male (Kokoro, grade C+)", gender: "male", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "am_michael" },
@@ -85,15 +69,12 @@ export const VOICE_LIBRARY: readonly LibraryVoice[] = [
 ];
 
 /**
- * The narrator used when a job carries no explicit voiceId.
- *
- * A Kokoro voice, deliberately: the default must work where the pipeline runs
- * (GitHub Actions + the render VM), and Edge 403s from those datacenter IPs
- * (verified — see engines/edge.ts). "bf_emma" is Kokoro's best-graded British
- * voice, so it reads as European while staying self-hosted and dependency-free.
- * Override per-run with VOICEOVER_DEFAULT_VOICE, or per-video from the review
- * dashboard via review-state.json.voiceId (e.g. "kokoro-af-heart" for Kokoro's
- * top-graded voice, or an en-GB Edge voice when rendering from a residential IP).
+ * The narrator used when a job carries no explicit voiceId and rotation is not
+ * consulted (e.g. resolveVoiceId fallbacks, tests). A self-hosted Kokoro voice
+ * so it works everywhere the pipeline runs. "bf_emma" is Kokoro's best-graded
+ * British voice, so it reads as European. Also a member of the rotation pool.
+ * Override per-video from the review dashboard via review-state.json.voiceId
+ * (e.g. "kokoro-af-heart" for Kokoro's top-graded voice).
  */
 export const DEFAULT_VOICE_ID = "kokoro-bf-emma";
 
@@ -138,11 +119,11 @@ export function kokoroEquivalent(voice: LibraryVoice): LibraryVoice {
 // consecutive videos in a different anchor voice makes the channel read less
 // like one template with the nouns swapped (the inauthentic-content concern).
 //
-// The pool is Kokoro-only ON PURPOSE: rotation happens automatically in the
-// pipeline, which runs on datacenter IPs where Edge 403s — an Edge voice in the
-// pool would fail the job. It's one top voice per accent×gender quadrant, so
-// every draw is a genuinely different anchor (accent AND gender move), and each
-// is the best-graded Kokoro voice in its quadrant.
+// The pool is self-hosted (Kokoro) ON PURPOSE: rotation runs unattended in the
+// pipeline (GitHub Actions + render VM), so every voice must work with no egress
+// or license risk. It's one top voice per accent×gender quadrant, so every draw
+// is a genuinely different anchor (accent AND gender move), each the best-graded
+// Kokoro voice in its quadrant.
 
 /** The auto-rotation pool: best Kokoro voice per accent×gender quadrant. */
 export const VOICE_ROTATION_POOL: readonly string[] = [

@@ -34,10 +34,10 @@ const reviewOverrideSchema = z.object({ voiceId: z.string().nullable().optional(
  * the same shared rotation helper — this is the third variety axis (voice) on
  * top of theme and script-structure.
  *
- * A review override may name ANY library voice (an operator can hand-pick an Edge
- * voice for a local/residential render, or a Kokoro voice outside the rotation
- * pool); it's validated against the whole library. It only joins rotation history
- * when it's a pool member, since history is the pool's "don't repeat" memory.
+ * A review override may name ANY library voice (e.g. a Kokoro voice outside the
+ * rotation pool); it's validated against the whole library. It only joins
+ * rotation history when it's a pool member, since history is the pool's "don't
+ * repeat" memory.
  *
  * Concurrency: read-modify-write with no lock, safe for the one-job-at-a-time
  * pipeline; concurrent jobs could pick the same voice, costing variety but

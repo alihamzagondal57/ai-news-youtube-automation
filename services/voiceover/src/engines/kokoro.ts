@@ -7,9 +7,10 @@ import type { TtsEngine } from "./types.js";
  * CPU, ~80-330MB ONNX weights, 24kHz native). Run through kokoro-js, so it lives
  * entirely inside this Node service: no external API, no egress, no key, no rate
  * limit — it behaves identically on a laptop, in GitHub Actions, and on the
- * render VM. That independence is the reason it exists here: Edge's neural
- * endpoint 403s from datacenter IPs (verified from both the dev sandbox and a
- * GitHub-hosted ubuntu runner), so it cannot back an automated pipeline.
+ * render VM. That independence is the reason it is the sole production engine:
+ * a hosted free TTS (Microsoft Edge's neural endpoint) was evaluated and dropped
+ * because it 403s from datacenter IPs and has no terms permitting commercial use
+ * (see docs/LICENSING.md), so it could not back an automated, monetized pipeline.
  *
  * 24kHz output already matches the pipeline's canonical format, so the later
  * transcode is a near no-op for Kokoro audio.
