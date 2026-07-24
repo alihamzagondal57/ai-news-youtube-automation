@@ -19,7 +19,7 @@ restriction obligations.
 |---|---|---|---|
 | 🔴 | **Remotion** (render engine) | **Blocker** | Free for a solo creator *by headcount*, but **an automated render pipeline requires the paid "Remotion for Automators" license regardless of team size** — and this project is exactly that. |
 | 🔴 | **GitHub Models free tier** (primary script + metadata LLM) | **Blocker** | GitHub's own docs scope the free tier to **prototyping/experimentation, not production**. Using it to produce monetized videos is outside its terms. |
-| 🟡 | **Edge TTS** (`edge-tts` path) | **Remove** | Undocumented Microsoft "Read Aloud" endpoint; **no public terms permit commercial/programmatic use**. Already blocked on datacenter IPs. Unlicensed path — delete it. |
+| ✅ | **Edge TTS** (`edge-tts` path) | **Removed** | Undocumented Microsoft "Read Aloud" endpoint; **no public terms permit commercial/programmatic use**; blocked on datacenter IPs. **Deleted** from the codebase — Kokoro is the sole production TTS. |
 | 🟡 | **Pexels / Pixabay footage** | **Use with rules** | Free for commercial use, no attribution — **but** identifiable people, logos/brands, and buildings can carry third-party rights the stock license does **not** clear. Editorial rules below. |
 | 🟡 | **Pixabay / stock music** | **Use with rules** | Free in a larger work (not standalone). Can trigger YouTube **Content ID** claims — keep the license record to clear them. |
 | 🟡 | **Google Gemini free tier** | **Avoid in prod** | Free (unpaid) tier allows Google to use your data and is not positioned for production; currently disabled in our chain anyway. |
@@ -29,27 +29,33 @@ restriction obligations.
 | 🟢 | **YouTube Data API v3** | **Clear, with disclosure** | Uploading our own content is permitted; synthetic-media disclosure is already set on every upload. |
 | 🟢 | All other libraries (SDKs, AWS S3, Whisper, sharp, React, etc.) | **Clear** | Permissive (MIT / Apache-2.0). Details in §4. |
 
-**Bottom line:** two things must change before monetized launch — **pay for a
-Remotion Automators license** (or switch renderer) and **stop using GitHub
-Models' free tier for production** (pay-as-you-go or a different provider). Both
-are cheaper to fix now than after a strike or an audit.
+**Bottom line:** two unresolved blockers remain before monetized launch.
+**(1) Remotion:** confirm the automation license question with Remotion directly
+(their docs are self-contradictory for the solo case); if it applies and $100/mo
+is unaffordable, migrating to a permissive renderer is a major project. **(2) The
+production LLM:** no free hosted tier is commercially compliant, so the realistic
+choices are self-hosting an Apache-2.0 model (free, but quality vs. our bar is
+unproven and must be trialed) or a cheap paid API. Both are cheaper to resolve
+now than after a strike or an audit. (Edge TTS — the third flag — is already
+removed.)
 
 ---
 
 ## 2. Action items (do before monetizing)
 
-1. **Remotion — license the automation.** Purchase **Remotion for Automators**
-   ($0.01/render, $100/month minimum spend per Remotion's published terms) *or*
-   move the render step to a non-Remotion, permissively-licensed renderer. See §3.1.
-2. **Script/metadata LLM — leave the GitHub Models free tier.** Switch the
-   production provider to a path whose terms permit production use: **paid GitHub
-   Models (pay-as-you-go)**, **Anthropic Claude** (paid; adapter already in the
-   registry), or another provider whose free tier explicitly allows commercial
-   production. Keep GitHub Models free only for local prototyping. See §3.2.
-3. **Delete the Edge TTS engine + voices.** It is an unlicensed path for
-   commercial use and is blocked on datacenter IPs. Kokoro is the primary and
-   the rotation pool is already Kokoro-only, so removal costs nothing in
-   production. See §3.3.
+1. **Remotion — confirm the license, then decide.** Its own docs and pricing page
+   disagree for the solo-automation case; get a written answer from Remotion
+   before spending effort. If Automators genuinely applies and the $100/month
+   minimum is unaffordable, the compliant escape is a **major** migration to a
+   permissive renderer (Revideo, MIT). Don't migrate on spec. See §3.1.
+2. **Script/metadata LLM — no free hosted tier is compliant.** GitHub Models,
+   Mistral, Gemini, OpenRouter, and DeepSeek free tiers are all prototyping/
+   non-commercial (and most train on your data). The genuinely-free compliant
+   path is **self-hosting an Apache-2.0/MIT model** (Qwen2.5-14B) via the existing
+   OpenAI-compatible adapter — **but its quality against our strict bar is
+   unproven and must be trialed**. Otherwise a cheap **paid** API. See §3.2.
+3. **[DONE] Deleted the Edge TTS engine + voices** — unlicensed for commercial
+   use and blocked on datacenter IPs; Kokoro is the sole production TTS. See §3.3.
 4. **Adopt the stock-media editorial rules** (§3.4) in `media-sourcing` and keep
    writing the per-asset license record into `media-manifest.json`.
 
@@ -73,16 +79,48 @@ This project renders programmatically from GitHub Actions (`renderMedia` in
 creator**. The free/individual tier does **not** cover it.
 
 - **Compliant path A — pay:** Remotion for Automators, **$0.01/render** with a
-  **$100/month minimum**. At our volume (a handful of renders/day) the per-render
-  cost is trivial; the $100 floor is the real number to budget.
-- **Compliant path B — replace:** move rendering to a permissively-licensed stack
-  (e.g. compositing directly with ffmpeg, or an MIT/Apache renderer). Larger
-  engineering cost, zero recurring license fee. Only worth it if the $100/month
-  minimum is prohibitive pre-revenue.
+  **$100/month minimum**. Per-render cost is trivial at our volume; the $100 floor
+  is the real number.
+- **Compliant path B — replace with a permissively-licensed renderer.** The
+  strongest candidate is **Revideo** (MIT, a Motion Canvas fork *"specifically
+  designed for commercial automation pipelines"* with a render API and template
+  system). **Motion Canvas** (MIT) also works but its headless/automated
+  rendering is rougher. Pure-ffmpeg compositing is possible but can't express the
+  themed motion graphics/transitions without huge effort.
 
-**Recommendation:** budget the Automators license for launch (path A). Re-evaluate
-path B only if render licensing becomes the dominant cost. Verify current numbers
-at <https://www.remotion.pro/license> before committing.
+**Verification (2026-07-24), because the stakes are high and Remotion's own pages
+disagree:**
+
+- The **docs FAQ** (the most specific source) is strict: an automation is *"owning
+  code that programmatically calls"* `renderMedia()` etc., and *"if you are
+  setting up an automation to render videos programmatically, you need to purchase
+  Renders"* — **with no free threshold**, and it does not exempt a solo individual.
+  By this text, our pipeline needs Automators.
+- The **pricing page** (`remotion.pro/license`) frames eligibility by *headcount*
+  ("individuals and companies up to 3 people" free), which reads as if a solo
+  creator is covered. It does not clearly address the solo-**automation** case.
+- These are genuinely inconsistent for our exact situation (one person, no
+  company, automated, monetized). The safe reading is the stricter FAQ.
+
+**Recommendation:**
+1. **Get a written determination from Remotion** before spending engineering
+   effort — email them / ask on Discord, describe the exact case (solo, no
+   company, automated GitHub Actions render, monetized own channel). This is free
+   and definitive; the docs alone are ambiguous.
+2. If they confirm Automators applies **and** $100/month is not affordable
+   pre-revenue: migrating to **Revideo (MIT)** is the compliant escape — but scope
+   it as a **major rewrite**, not a swap. Our entire composition layer
+   (`remotion/src`: themed React components, captions, lower-third, ticker,
+   transitions) and the render orchestration (`infra/render-server`:
+   `renderSegmented`, `segmentPlan`, chunk cache, targeted re-render — all on
+   `@remotion/renderer` + `@remotion/bundler`) are Remotion-specific. Revideo uses
+   Motion Canvas's scene-graph API, not React components, so the composition is
+   rewritten from scratch. It is the single largest module in the project.
+3. **Do not migrate on spec.** Confirm the license answer first; only migrate if
+   forced.
+
+Verify current numbers/terms at <https://www.remotion.pro/license> and
+<https://www.remotion.dev/docs/license/faq>.
 
 ### 3.2 🔴 GitHub Models free tier — prototyping only
 
@@ -96,18 +134,57 @@ its intended terms.
 This matters most because GitHub Models `gpt-4o` is our **primary** script
 provider (and the metadata generator uses "the same LLM").
 
-- **Compliant path A:** enable **GitHub Models paid (pay-as-you-go)** on the same
-  account — same models, terms then cover production.
-- **Compliant path B:** switch the production chain to **Anthropic Claude**
-  (paid; `claude-opus-4-8` adapter already ranked first when `ANTHROPIC_API_KEY`
-  is set) or another provider whose terms permit commercial production. Our
-  multi-provider registry makes this a config change, not a rewrite.
+**Is any FREE hosted tier both compliant and good enough? Verified (2026-07-24):**
+No — the major free API tiers are uniformly scoped to prototyping/non-commercial
+use, and most also train on your inputs:
 
-**Recommendation:** for launch, run production on a **paid** provider (Claude is
-already wired and highest-quality; or GitHub Models PAYG if cost-optimizing).
-Keep the GitHub Models free key strictly for local prototyping/tests. The
-qualification harness and quality bar are provider-independent, so quality does
-not regress.
+| Free tier | Commercial production? | Trains on your data? | Verdict |
+|---|---|---|---|
+| GitHub Models | ❌ *"experiment… once you are ready to bring your application to production, opt in to paid usage"* | — | prototyping only |
+| Mistral "Experiment" (free) | ❌ evaluation/prototyping, "not production" | ⚠️ yes on free; opt-out only on paid | not compliant |
+| Google Gemini (free) | ❌ sources: not for revenue-generating use | ⚠️ yes on free (opt-out); paid/Vertex don't | not compliant |
+| OpenRouter `:free` models | ❌ "not recommended for production"; per-provider terms vary | ⚠️ some providers train on inputs | not compliant/unreliable |
+| DeepSeek API (free) | ❌ "restricted to personal, academic, or non-commercial projects" | ⚠️ yes | not compliant (paid tier is commercial) |
+
+So the free hosted route is a dead end for a monetized product. Note Mistral
+*passed our quality bar* (the-explainer 428–455 words) and only failed on rate
+limits — but its **free** terms are prototyping-only regardless, so throttling it
+would not make it compliant. That leaves three real options:
+
+- **Path A — pay per use (cheap).** DeepSeek **paid** (~$0.14/1M output) or
+  GitHub Models **pay-as-you-go** or **Anthropic Claude** (`claude-opus-4-8`,
+  already ranked first when `ANTHROPIC_API_KEY` is set; ~$0.10–0.15/script,
+  highest quality). Our multi-provider registry makes this a config change.
+- **Path B — self-host an open-weight model (genuinely free + clean, the Kokoro
+  playbook).** An **Apache-2.0 / MIT** model's *weights license* grants
+  commercial use of its outputs with no ToS and no per-call cost. Best CPU-viable
+  candidates: **Qwen2.5-14B-Instruct** (Apache-2.0) or **-7B**; **Mistral-Nemo**
+  (Apache-2.0); **DeepSeek** distills (MIT). Avoid Llama (its community license
+  isn't OSI-free). **Architecture fit is excellent:** Ollama/llama.cpp/vLLM expose
+  an OpenAI-compatible `/v1` endpoint, so this is **one new registry entry**
+  (`baseURL` → localhost), not a rewrite — the same adapter Groq/Cerebras/GitHub
+  use. The qualification harness can test it directly.
+  - **Reality check — speed:** CPU inference is slow. ~9 tok/s for a 4-bit 7B on a
+    6-core desktop; a 2-core GitHub runner is slower. A full two-phase script is
+    ~4,000–6,000 output tokens → roughly **10–25 min/script on CPU** plus retries.
+    Fine at low volume; a GPU on the render VM would remove the pain.
+  - **Reality check — quality (the real risk):** our bar is strict (novelty,
+    <8-word verbatim runs, insight coverage, per-segment word bands). gpt-4o
+    clears it; a 7–14B open model is materially weaker at instruction-following
+    and sustaining insight+length, so it **may** pass with two-phase + retries or
+    **may** fail novelty/insight consistently. **Unproven — it must be measured,
+    not assumed.**
+
+**Recommendation:** since paying isn't currently an option, **run an empirical
+trial of Path B before committing**: install Ollama, pull `qwen2.5:14b-instruct`
+(Apache-2.0), add a `local` provider entry pointing the OpenAI-compatible adapter
+at `http://localhost:11434/v1`, and run `qualify-providers.mts` against the same
+strict bar. If it passes → we have a compliant, free, zero-ToS primary that runs
+on the render VM like Kokoro. **If it does not pass, the honest conclusion is
+that free-and-compliant-and-good-enough does not currently exist**, and the
+channel needs either a cheap paid API (Path A) or better self-host hardware
+(a 32B model / a GPU). I will not recommend shipping a free tier whose terms
+forbid it, nor claim a small CPU model matches gpt-4o without measuring it.
 
 ### 3.3 🟡→ delete Edge TTS
 
