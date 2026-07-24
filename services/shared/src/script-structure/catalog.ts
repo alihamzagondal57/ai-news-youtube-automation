@@ -16,10 +16,14 @@ import type { ScriptStructure } from "./tokens.js";
  * the build.
  */
 
+// Opening and outro are produced inside the multi-field plan call, so like any
+// prose sharing a JSON budget they come out on the short side (~35-50 words
+// measured). 30-100 is the realistic band that absorbs that variance — a length
+// range, not a quality check. ~12-40 seconds of spoken hook/close.
 /** Spoken-word budget for the opening hook, shared by all structures. */
-export const OPENING_WORDS = { min: 40, max: 90 };
+export const OPENING_WORDS = { min: 30, max: 100 };
 /** Spoken-word budget for the outro, shared by all structures. */
-export const OUTRO_WORDS = { min: 40, max: 90 };
+export const OUTRO_WORDS = { min: 30, max: 100 };
 
 export const SCRIPT_STRUCTURES: readonly ScriptStructure[] = [
   {
