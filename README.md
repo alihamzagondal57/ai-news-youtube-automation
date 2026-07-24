@@ -21,7 +21,7 @@ The pipeline is split into small, single-purpose services connected by a **share
 1. **GitHub Actions runners are stateless and ephemeral.** Nothing survives between steps except what you explicitly persist — so every step reads its inputs from and writes its outputs to `jobs/{jobId}/...` in R2. This also means any failed step can be re-run in isolation without re-running the whole pipeline (see [`docs/PIPELINE.md`](docs/PIPELINE.md)).
 2. **Rendering is the one step that doesn't fit GitHub Actions.** A 4K, 5–20 minute Remotion render is CPU/memory-heavy and can exceed free-tier job limits. So rendering runs on a **Google Compute Engine VM** (`c2-standard-8`, funded by Google for Startups credit) instead — started on demand per job and self-stopped when done, via a lightweight `render-server` that GitHub Actions triggers once every upstream artifact is ready.
 3. **n8n orchestrates, it doesn't do the heavy lifting.** n8n's job is sequencing, retries, and (optionally) pausing for human review — e.g. approving a script or thumbnail before render. The actual work (LLM calls, TTS, Whisper, ffmpeg, Remotion) lives in versioned, independently testable code under `services/` and `remotion/`, which also run in CI.
-4. **Every inter-step contract is a typed schema**, not "whatever JSON happened to come out." `services/shared/schemas` (Zod, mirrored as `pydantic` models in the Python services) is the single source of truth for `trend.json`, `script.json`, `captions.json`, etc. — this is what keeps 8 independently-deployable steps from silently drifting apart.
+4. **Every inter-step contract is a typed schema**, not "whatever JSON happened to come out." `services/shared/schemas` (Zod, mirrored as `pydantic` models in the Python caption-sync service) is the single source of truth for `trend.json`, `script.json`, `captions.json`, etc. — this is what keeps 8 independently-deployable steps from silently drifting apart.
 
 ## Pipeline overview
 
@@ -54,7 +54,7 @@ n8n/workflows/         Exported n8n workflow JSON (manual mode, auto mode, error
 services/              One folder per pipeline step (see docs/PIPELINE.md for I/O contracts)
   trend-research/         Firecrawl-based trending news discovery         (Node/TS)
   script-generator/       Claude API / Groq script writing                (Node/TS)
-  voiceover/              Edge-TTS narration                              (Python)
+  voiceover/              Edge-TTS neural narration + timing              (Node/TS)
   caption-sync/           Whisper word-level caption timestamps           (Python)
   media-sourcing/         Pexels + Pixabay stock footage/music/SFX        (Node/TS)
   metadata-generator/     Thumbnail + SEO title/description/tags/chapters (Node/TS)

@@ -18,8 +18,7 @@ Copy `.env.example` to `.env` and fill in every key above before running anythin
 ## 2. Local install
 ```bash
 npm install            # Node workspaces: remotion, services/*, infra/render-server
-pip install -r services/voiceover/requirements.txt
-pip install -r services/caption-sync/requirements.txt
+pip install -r services/caption-sync/requirements.txt   # caption-sync is the one Python service (Whisper)
 ```
 
 ## 3. YouTube OAuth (one-time, interactive — never run in CI)

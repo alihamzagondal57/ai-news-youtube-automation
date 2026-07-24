@@ -3,6 +3,7 @@
   "references": [
     { "path": "services/shared" },
     { "path": "services/script-generator" },
+    { "path": "services/voiceover" },
     { "path": "infra/render-server" }
   ]
 }

@@ -12,15 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - run: pip install -r services/voiceover/requirements.txt
-      # TODO(remotion-pipeline-followup): implement services/voiceover/src/main.py
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Builds @ai-news/shared then the voiceover service (composite project refs).
+      - run: npx tsc -b services/voiceover
       - name: Generate voiceover
         working-directory: services/voiceover
-        run: python -m src.main --job-id "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
+          # Edge TTS (neural voice library) needs no key. ffmpeg is bundled via
+          # ffmpeg-static, so no system install is required. The Windows-only SAPI
+          # fallback is unavailable on ubuntu, so this runner relies on Edge being
+          # reachable — the default "auto" mode fails loudly if it is not.
+          VOICEOVER_ENGINE: auto
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

@@ -1,0 +1,184 @@
+// END-TO-END test of the voiceover SERVICE: uploads a real script.json to an
+// in-process S3 store, runs the actual runVoiceover() entry point — which
+// resolves the voice + engine, synthesizes every segment to REAL audio,
+// concatenates with paced pauses, loudness-normalizes, and writes voiceover.wav
+// + segment-timing.json — then reads both back and proves the timing is exactly
+// what the render pipeline consumes by feeding it through render-server's OWN
+// buildInputProps() and buildChunkPlan().
+//
+// Real audio is generated. Edge TTS (the neural voice library) is the production
+// engine, but its endpoint is DRM+egress gated and unreachable from CI/this
+// sandbox, so the test forces the offline Windows engine (VOICEOVER_ENGINE=sapi)
+// to still produce genuine, measurable audio and exercise the whole path.
+import "dotenv/config";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createRequire } from "node:module";
+import S3rver from "s3rver";
+
+const execFileAsync = promisify(execFile);
+const require = createRequire(import.meta.url);
+const ffprobePath = (require("ffprobe-static") as { path: string }).path;
+
+const S3_PORT = 4574;
+const BUCKET = "ai-news-pipeline";
+const JOB_ID = "77777777-7777-7777-7777-777777777777";
+const FPS = 30;
+
+// R2 -> s3rver, before importing anything that reads config at load time.
+process.env.R2_ACCOUNT_ID = "e2e";
+process.env.R2_ACCESS_KEY_ID = "S3RVER";
+process.env.R2_SECRET_ACCESS_KEY = "S3RVER";
+process.env.R2_BUCKET_NAME = BUCKET;
+process.env.R2_ENDPOINT = `http://localhost:${S3_PORT}`;
+process.env.R2_FORCE_PATH_STYLE = "true";
+// Edge is unreachable here; force the offline engine so real audio is produced.
+process.env.VOICEOVER_ENGINE = "sapi";
+// render-server's config requires these at import; the values are irrelevant to
+// the frame math we're checking.
+process.env.RENDER_SERVER_SHARED_SECRET = "e2e";
+process.env.RENDER_FPS = String(FPS);
+
+// A compact but real script: opening (id 0), three body segments, outro (id 4).
+// Texts are short on purpose — SAPI synthesizes at ~real time, so this keeps the
+// test to a minute or so while still exercising every code path.
+const SCRIPT = {
+  jobId: JOB_ID,
+  title: "AI Liability Rules Explained",
+  structureId: "deep-dive",
+  segments: [
+    { id: 0, text: "Europe just changed the rules on who pays when artificial intelligence causes harm.", headline: "AI Liability Rules Explained", visualCue: "establishing shot", estSeconds: 4 },
+    { id: 1, text: "The directive shifts the burden of proof toward the companies operating high risk systems.", headline: "Burden Of Proof Shifts", visualCue: "courtroom footage", estSeconds: 5, insight: "explains the burden-of-proof shift" },
+    { id: 2, text: "Smaller developers warn that compliance costs could climb faster than they can absorb.", headline: "Costs For Small Firms", visualCue: "startup office", estSeconds: 5, insight: "flags the cost impact on small developers" },
+    { id: 3, text: "Member states still need to sign off, and a two year transition gives everyone time.", headline: "What Happens Next", visualCue: "parliament building", estSeconds: 5, insight: "notes the transition timeline" },
+    { id: 4, text: "Watch how member states translate this into national law over the coming months.", headline: "What To Watch", visualCue: "wide establishing shot", estSeconds: 4 },
+  ],
+};
+
+let failures = 0;
+function check(label: string, condition: boolean, detail: string): void {
+  if (condition) console.log(`  PASS  ${label} — ${detail}`);
+  else {
+    console.error(`  FAIL  ${label} — ${detail}`);
+    failures++;
+  }
+}
+
+async function probe(path: string): Promise<{ duration: number; codec: string; sampleRate: string }> {
+  const { stdout } = await execFileAsync(ffprobePath, [
+    "-v", "error",
+    "-select_streams", "a:0",
+    "-show_entries", "stream=codec_name,sample_rate:format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    path,
+  ]);
+  const [codec, sampleRate, duration] = stdout.trim().split(/\r?\n/);
+  return { duration: Number.parseFloat(duration), codec, sampleRate };
+}
+
+async function main() {
+  const dataDir = await mkdtemp(join(tmpdir(), "e2e-voiceover-"));
+  const server = new S3rver({
+    port: S3_PORT,
+    address: "localhost",
+    silent: true,
+    directory: dataDir,
+    configureBuckets: [{ name: BUCKET, configs: [] }],
+  });
+  await server.run();
+  console.log(`s3rver (R2 stand-in) on :${S3_PORT}\n`);
+
+  try {
+    const { JobStore, segmentTimingSchema } = await import("@ai-news/shared");
+    const { runVoiceover } = await import("../services/voiceover/src/index.ts");
+    const { buildInputProps } = await import("../infra/render-server/src/buildInputProps.ts");
+    const { buildChunkPlan } = await import("../infra/render-server/src/segmentPlan.ts");
+
+    const store = JobStore.fromEnv();
+    await store.putJson(store.jobKey(JOB_ID, "script.json"), SCRIPT);
+    console.log(`Uploaded script.json (${SCRIPT.segments.length} segments); running the real service entry point (engine=sapi)...\n`);
+
+    const started = Date.now();
+    await runVoiceover(JOB_ID);
+    console.log(`\nrunVoiceover completed in ${((Date.now() - started) / 1000).toFixed(1)}s\n`);
+
+    // ── Artifacts exist and satisfy the shared contract ──────────────────────
+    const timing = await store.getJsonIfExists(store.jobKey(JOB_ID, "segment-timing.json"), segmentTimingSchema);
+    check("segment-timing.json written and satisfies segmentTimingSchema", timing !== null, timing ? "parsed" : "MISSING or invalid");
+    if (!timing) throw new Error("no segment-timing.json to inspect");
+
+    // Download the real audio and prove it is genuine, non-empty audio.
+    const localWav = join(dataDir, "voiceover.wav");
+    await store.downloadToFile(store.jobKey(JOB_ID, "voiceover.wav"), localWav);
+    const wavStat = await stat(localWav);
+    const media = await probe(localWav);
+    check("voiceover.wav is real, non-empty audio", wavStat.size > 10_000 && media.duration > 0, `${(wavStat.size / 1024).toFixed(0)} KB, ${media.codec} @ ${media.sampleRate}Hz, ${media.duration.toFixed(2)}s`);
+    check("audio duration matches segment-timing total", Math.abs(media.duration - timing.totalDurationSeconds) < 0.05, `audio ${media.duration.toFixed(3)}s vs timing ${timing.totalDurationSeconds.toFixed(3)}s`);
+
+    // ── Timing describes exactly the script's segments ───────────────────────
+    const scriptIds = SCRIPT.segments.map((s) => s.id);
+    const timingIds = timing.segments.map((s) => s.id);
+    check("one timing entry per script segment, in order", JSON.stringify(scriptIds) === JSON.stringify(timingIds), `script ${JSON.stringify(scriptIds)} vs timing ${JSON.stringify(timingIds)}`);
+    check("first segment starts at 0", timing.segments[0].startSeconds === 0, `${timing.segments[0].startSeconds}`);
+
+    let contiguous = true;
+    let ascending = true;
+    for (let i = 0; i < timing.segments.length; i++) {
+      const s = timing.segments[i];
+      if (s.endSeconds <= s.startSeconds) ascending = false;
+      if (i > 0) {
+        if (s.startSeconds <= timing.segments[i - 1].startSeconds) ascending = false;
+        if (Math.abs(s.startSeconds - timing.segments[i - 1].endSeconds) > 1e-6) contiguous = false;
+      }
+    }
+    check("segments are gap-free and contiguous", contiguous, "each segment ends exactly where the next begins");
+    check("segments strictly ascend with positive spans", ascending, "no zero-length or out-of-order segment");
+
+    // ── The decisive check: render-server's OWN planner accepts this timing ──
+    // buildInputProps turns startSeconds into frames; buildChunkPlan asserts the
+    // resulting frame timeline tiles with no gap or overlap. If our timing were
+    // even slightly off-contract, one of these throws.
+    const assets = {
+      dir: dataDir,
+      script: SCRIPT as any,
+      segmentTiming: timing,
+      captions: { jobId: JOB_ID, words: [] } as any,
+      mediaManifest: { jobId: JOB_ID, clips: [], music: null, sfx: [] } as any,
+    };
+    let planOk = false;
+    let planDetail = "";
+    try {
+      const props = buildInputProps(assets as any);
+      const plan = buildChunkPlan(props);
+      // Independently confirm the frame math render-server will apply.
+      const framesOk = props.segments.every((seg, i) => seg.startFrame === Math.round(timing.segments[i].startSeconds * FPS));
+      planOk = framesOk && plan.chunks.length === SCRIPT.segments.length + 1; // + outro chunk
+      planDetail = `${plan.chunks.length} chunks over ${plan.totalDurationInFrames} frames; startFrames ${props.segments.map((s) => s.startFrame).join(",")}`;
+    } catch (err) {
+      planDetail = `planner rejected the timing: ${(err as Error).message}`;
+    }
+    check("render-server buildInputProps + buildChunkPlan accept the timing", planOk, planDetail);
+
+    // ── Show the real output ─────────────────────────────────────────────────
+    console.log(`\n── Generated voiceover ──`);
+    console.log(`  ${media.duration.toFixed(1)}s of audio · ${timing.segments.length} segments`);
+    for (const s of timing.segments) {
+      console.log(`    segment ${s.id}: ${s.startSeconds.toFixed(2)}s → ${s.endSeconds.toFixed(2)}s  (${(s.endSeconds - s.startSeconds).toFixed(2)}s)`);
+    }
+
+    console.log("");
+    console.log(failures === 0 ? "E2E PASSED: script.json -> voiceover.wav + segment-timing.json, verified against the render planner." : `${failures} failure(s)`);
+  } finally {
+    await server.close();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+  if (failures > 0) process.exit(1);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
