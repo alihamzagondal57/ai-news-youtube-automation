@@ -5,7 +5,7 @@
 import { __test } from "../services/voiceover/src/engines/edge.ts";
 import { __test as kokoroTest } from "../services/voiceover/src/engines/kokoro.ts";
 import { buildSegmentTiming, assertTimingInvariants, type TimelinePiece } from "../services/voiceover/src/timing.ts";
-import { VOICE_LIBRARY, DEFAULT_VOICE_ID, getVoice, resolveVoiceId, sapiEquivalent, kokoroEquivalent } from "../services/voiceover/src/voices.ts";
+import { VOICE_LIBRARY, DEFAULT_VOICE_ID, getVoice, resolveVoiceId, sapiEquivalent, kokoroEquivalent, VOICE_ROTATION_POOL, VOICE_AVOID_WINDOW, selectVoice, EMPTY_VOICE_ROTATION } from "../services/voiceover/src/voices.ts";
 
 let failures = 0;
 function check(label: string, condition: boolean, detail: string): void {
@@ -64,6 +64,27 @@ check("library includes Kokoro voices", kokoroVoices.length >= 6, `${kokoroVoice
 check("every Kokoro voice names a model voice", kokoroVoices.every((v) => Boolean(v.engineVoice)), "all carry engineVoice (e.g. bm_george)");
 check("Kokoro offers both genders", new Set(kokoroVoices.map((v) => v.gender)).size === 2, "Kokoro male + female present");
 check("kokoroEquivalent keeps gender and is Kokoro", kokoroEquivalent(getVoice("sapi-david")).engine === "kokoro" && kokoroEquivalent(getVoice("sapi-david")).gender === "male", "male request -> male Kokoro voice");
+
+// ── Voice rotation pool (the third variety axis) ─────────────────────────────
+const poolVoices = VOICE_ROTATION_POOL.map((id) => getVoice(id));
+check("rotation pool is all self-hosted Kokoro voices", poolVoices.every((v) => v.engine === "kokoro"), "no Edge voice can be auto-picked (would 403 in CI)");
+check("rotation pool spans both accents", new Set(poolVoices.map((v) => v.accent)).size >= 2, [...new Set(poolVoices.map((v) => v.accent))].join(" + "));
+check("rotation pool spans both genders", new Set(poolVoices.map((v) => v.gender)).size === 2, "male + female both in rotation");
+check("default voice is in the rotation pool", VOICE_ROTATION_POOL.includes(DEFAULT_VOICE_ID), DEFAULT_VOICE_ID);
+// Deterministic rotation: never repeats within the avoid window, and cycles the whole pool.
+let vState = EMPTY_VOICE_ROTATION;
+const picks: string[] = [];
+let rng = 0;
+for (let i = 0; i < 400; i++) {
+  const sel = selectVoice({ state: vState, random: () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) });
+  picks.push(sel.voiceId);
+  vState = sel.nextState;
+}
+let vConsecutive = 0;
+for (let i = 1; i < picks.length; i++) if (picks[i] === picks[i - 1]) vConsecutive++;
+check("rotation never repeats within the avoid window", vConsecutive === 0, `0 back-to-back repeats across 400 draws (window ${VOICE_AVOID_WINDOW})`);
+check("rotation uses the whole pool", new Set(picks).size === VOICE_ROTATION_POOL.length, `${new Set(picks).size}/${VOICE_ROTATION_POOL.length} voices used`);
+check("override wins and is flagged manual", (() => { const s = selectVoice({ override: "kokoro-am-michael" }); return s.voiceId === "kokoro-am-michael" && s.manual; })(), "explicit override returns that voice, manual=true");
 
 // ── Kokoro helpers ───────────────────────────────────────────────────────────
 const { splitForModel, encodeWavPcm16 } = kokoroTest;

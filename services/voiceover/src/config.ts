@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { DEFAULT_VOICE_ID } from "./voices.js";
 
 /**
  * How the service selects a synthesis engine.
@@ -24,9 +23,6 @@ function engineMode(): EngineMode {
 }
 
 export const config = {
-  /** Overridable default narrator, before any per-job review-state override. */
-  defaultVoiceId: process.env.VOICEOVER_DEFAULT_VOICE || DEFAULT_VOICE_ID,
-
   engineMode: engineMode(),
 
   /**

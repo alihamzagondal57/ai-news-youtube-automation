@@ -18,10 +18,9 @@ per-segment offsets are measured from the real audio.
 ## Voice library
 
 A curated catalog of narrator voices (`src/voices.ts`) the review dashboard
-offers per video via `review-state.json.voiceId`, with a pipeline default
-(`kokoro-bf-emma` — Kokoro's best-graded British voice; reads as "European" and,
-being self-hosted, works where the pipeline actually runs). Three engine kinds
-back the library:
+offers per video via `review-state.json.voiceId`. Absent an override, the voice
+is **auto-rotated** across the top news-anchor voices (see Voice rotation below)
+rather than fixed. Three engine kinds back the library:
 
 | Engine | Voices | Notes |
 |---|---|---|
@@ -29,9 +28,49 @@ back the library:
 | **`edge`** | 13 Microsoft Edge **neural** voices — British, Irish, American, Australian, Canadian; male & female | Higher naturalness, but **403s from datacenter IPs** (see below), so it's only usable from a residential/local machine. Kept for that case. |
 | **`sapi`** | 2 offline Windows System.Speech voices (David, Zira) | Robotic by comparison. No network. Last-resort fallback and an engine the tests can always run without model weights. |
 
-Selection is `review-state.json.voiceId` → pipeline default. An override naming
-an unknown voice throws rather than silently substituting — shipping a video in
-the wrong voice unnoticed is worse than a loud failure.
+An override naming an unknown voice throws rather than silently substituting —
+shipping a video in the wrong voice unnoticed is worse than a loud failure.
+
+## Voice rotation — the third variety axis
+
+Voice is rotated per video the same way themes and script structures are, using
+the **same shared rotation helper** (`@ai-news/shared` `rotate()`). Narrating
+consecutive videos in a different anchor voice is another lever against the
+template-repetition ("inauthentic content") concern — on top of a different
+*shape* (structure) and a different *look* (theme), each video also has a
+different *voice*.
+
+`resolveJobVoice()` (`src/voiceSelection.ts`) resolves in priority order,
+mirroring `resolveJobStructure()` exactly:
+
+1. **Manual override** — `review-state.json.voiceId` (any library voice; an
+   operator can hand-pick an Edge voice for a local/residential render).
+2. **The voice this job already used** — `jobs/{jobId}/voice.json`.
+3. **Auto-rotation** — excludes the last `VOICE_AVOID_WINDOW` (2) picks, records
+   the choice to `state/voice-rotation.json`.
+
+Step 2 makes the voice **sticky per job**, and it matters more than it does for
+structure: **a voice change re-times the entire video** (new audio → new
+offsets), so a voiceover retry that re-rolled the voice would desync the
+captions, media, and render already built against the first take. Rotation
+happens once per job, not once per attempt.
+
+### The rotation pool
+
+`VOICE_ROTATION_POOL` is the best Kokoro voice in each **accent × gender**
+quadrant, so every draw moves *both* axes:
+
+| voice | accent | gender | grade |
+|---|---|---|---|
+| `kokoro-af-heart` | American | female | A |
+| `kokoro-bf-emma` | British | female | B- |
+| `kokoro-am-michael` | American | male | C+ |
+| `kokoro-bm-george` | British | male | C |
+
+The pool is **Kokoro-only on purpose**: auto-rotation runs unattended in CI on
+datacenter IPs where Edge 403s, so an Edge voice in the pool would fail the job.
+A manual override may still name any voice (including Edge) for a local render;
+an out-of-pool override is honored but doesn't enter the pool's rotation history.
 
 ### Why Kokoro is the primary, not Edge
 

@@ -17,6 +17,8 @@
  * dashboard needs genuine variety to choose from, not one voice with a toggle.
  */
 
+import { rotate } from "@ai-news/shared";
+
 export type VoiceGender = "male" | "female";
 export type VoiceEngineKind = "edge" | "kokoro" | "sapi";
 
@@ -129,4 +131,67 @@ export function sapiEquivalent(voice: LibraryVoice): LibraryVoice {
 export function kokoroEquivalent(voice: LibraryVoice): LibraryVoice {
   const match = VOICE_LIBRARY.find((v) => v.engine === "kokoro" && v.gender === voice.gender);
   return match ?? getVoice("kokoro-af-heart");
+}
+
+// ── Voice rotation ───────────────────────────────────────────────────────────
+// A third variety axis on top of theme and script-structure rotation: narrating
+// consecutive videos in a different anchor voice makes the channel read less
+// like one template with the nouns swapped (the inauthentic-content concern).
+//
+// The pool is Kokoro-only ON PURPOSE: rotation happens automatically in the
+// pipeline, which runs on datacenter IPs where Edge 403s — an Edge voice in the
+// pool would fail the job. It's one top voice per accent×gender quadrant, so
+// every draw is a genuinely different anchor (accent AND gender move), and each
+// is the best-graded Kokoro voice in its quadrant.
+
+/** The auto-rotation pool: best Kokoro voice per accent×gender quadrant. */
+export const VOICE_ROTATION_POOL: readonly string[] = [
+  "kokoro-af-heart", // American female — grade A
+  "kokoro-bf-emma", // British female — grade B-
+  "kokoro-am-michael", // American male — grade C+
+  "kokoro-bm-george", // British male — grade C
+];
+
+/**
+ * With a 4-voice pool, excluding the last 2 still leaves a choice while
+ * guaranteeing more than "not twice in a row" — no accent/gender repeats within
+ * a 3-video window.
+ */
+export const VOICE_AVOID_WINDOW = 2;
+
+/** Cross-job rotation state, stored at `state/voice-rotation.json`. Same shape/guarantees as the other rotations. */
+export interface VoiceRotationState {
+  /** Most recent first. */
+  recentVoiceIds: string[];
+}
+
+export const EMPTY_VOICE_ROTATION: VoiceRotationState = { recentVoiceIds: [] };
+
+export interface VoiceSelection {
+  voiceId: string;
+  /** True when the id came from a manual override rather than rotation. */
+  manual: boolean;
+  nextState: VoiceRotationState;
+}
+
+export interface SelectVoiceOptions {
+  state?: VoiceRotationState;
+  /** Manual override; wins over rotation but must be a pool member (validate library-wide separately). */
+  override?: string | null;
+  /** Injectable for deterministic tests. Must return [0, 1). */
+  random?: () => number;
+  availableVoiceIds?: readonly string[];
+}
+
+/** No-recent-repeats voice pick via the shared rotation helper — the same engine theme and structure use. */
+export function selectVoice(options: SelectVoiceOptions = {}): VoiceSelection {
+  const { state = EMPTY_VOICE_ROTATION, override = null, random, availableVoiceIds = VOICE_ROTATION_POOL } = options;
+  const result = rotate({
+    ids: availableVoiceIds,
+    state: { recentIds: state.recentVoiceIds },
+    override,
+    avoidWindow: VOICE_AVOID_WINDOW,
+    random,
+  });
+  return { voiceId: result.id, manual: result.manual, nextState: { recentVoiceIds: result.nextState.recentIds } };
 }

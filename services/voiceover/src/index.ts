@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
   JobStore,
   createLogger,
-  reviewStateSchema,
   scriptSchema,
   segmentTimingSchema,
   type SegmentTiming,
@@ -13,7 +12,8 @@ import { concatWav, makeSilence, normalizeLoudness, probeDurationSeconds, toCano
 import { config } from "./config.js";
 import { resolveEngine } from "./engines/index.js";
 import { assertTimingInvariants, buildSegmentTiming, type TimelinePiece } from "./timing.js";
-import { getVoice, resolveVoiceId } from "./voices.js";
+import { getVoice } from "./voices.js";
+import { resolveJobVoice } from "./voiceSelection.js";
 
 /** Difference we tolerate between the summed piece durations and the finished file (encoder/rounding slack). */
 const DURATION_TOLERANCE_SECONDS = 0.05;
@@ -34,9 +34,10 @@ export async function runVoiceover(jobId: string): Promise<void> {
 
   const script = await store.getJson(store.jobKey(jobId, "script.json"), scriptSchema);
 
-  // Optional per-job voice override from the review dashboard.
-  const reviewState = await store.getJsonIfExists(store.jobKey(jobId, "review-state.json"), reviewStateSchema);
-  const requestedVoice = getVoice(resolveVoiceId(reviewState?.voiceId ?? config.defaultVoiceId));
+  // Resolve the narrator: review override -> voice sticky to this job -> auto
+  // rotation across the top news-anchor voices (see voiceSelection.ts). The pick
+  // is recorded so a retry re-times to the same voice.
+  const requestedVoice = getVoice(await resolveJobVoice(store, jobId, logger));
   const { engine, voice } = await resolveEngine(requestedVoice, logger);
 
   logger.info(
