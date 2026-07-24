@@ -35,8 +35,10 @@ process.env.R2_SECRET_ACCESS_KEY = "S3RVER";
 process.env.R2_BUCKET_NAME = BUCKET;
 process.env.R2_ENDPOINT = `http://localhost:${S3_PORT}`;
 process.env.R2_FORCE_PATH_STYLE = "true";
-// Edge is unreachable here; force the offline engine so real audio is produced.
-process.env.VOICEOVER_ENGINE = "sapi";
+// Edge is unreachable from datacenter IPs, so the E2E uses a self-contained
+// engine to generate real audio. Defaults to Kokoro (self-hosted neural);
+// override with VOICEOVER_ENGINE=sapi on a host without the Kokoro weights.
+process.env.VOICEOVER_ENGINE = process.env.VOICEOVER_ENGINE ?? "kokoro";
 // render-server's config requires these at import; the values are irrelevant to
 // the frame math we're checking.
 process.env.RENDER_SERVER_SHARED_SECRET = "e2e";
@@ -99,7 +101,7 @@ async function main() {
 
     const store = JobStore.fromEnv();
     await store.putJson(store.jobKey(JOB_ID, "script.json"), SCRIPT);
-    console.log(`Uploaded script.json (${SCRIPT.segments.length} segments); running the real service entry point (engine=sapi)...\n`);
+    console.log(`Uploaded script.json (${SCRIPT.segments.length} segments); running the real service entry point (engine=${process.env.VOICEOVER_ENGINE})...\n`);
 
     const started = Date.now();
     await runVoiceover(JOB_ID);

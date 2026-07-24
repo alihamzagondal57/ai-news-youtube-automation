@@ -19,37 +19,61 @@ per-segment offsets are measured from the real audio.
 
 A curated catalog of narrator voices (`src/voices.ts`) the review dashboard
 offers per video via `review-state.json.voiceId`, with a pipeline default
-(`en-GB-RyanNeural` — British male reads as "European" to the target audience).
-Two engine kinds back these:
+(`kokoro-bf-emma` — Kokoro's best-graded British voice; reads as "European" and,
+being self-hosted, works where the pipeline actually runs). Three engine kinds
+back the library:
 
 | Engine | Voices | Notes |
 |---|---|---|
-| **`edge`** | 13 Microsoft Edge **neural** voices — British, Irish, American, Australian, Canadian; male & female | The real library. Free, no key. Production default. |
-| **`sapi`** | 2 offline Windows System.Speech voices (David, Zira) | Robotic by comparison. No network. Exists as a last-resort fallback and as the engine the tests can always run. |
+| **`kokoro`** ⭐ | 8 Kokoro-82M **neural** voices — American & British, male & female | **Self-hosted primary.** Apache-2.0, runs on CPU (~86 MB q8 ONNX), 24 kHz native. No egress, no key, no rate limit — identical locally, in CI, and on the render VM. |
+| **`edge`** | 13 Microsoft Edge **neural** voices — British, Irish, American, Australian, Canadian; male & female | Higher naturalness, but **403s from datacenter IPs** (see below), so it's only usable from a residential/local machine. Kept for that case. |
+| **`sapi`** | 2 offline Windows System.Speech voices (David, Zira) | Robotic by comparison. No network. Last-resort fallback and an engine the tests can always run without model weights. |
 
 Selection is `review-state.json.voiceId` → pipeline default. An override naming
 an unknown voice throws rather than silently substituting — shipping a video in
 the wrong voice unnoticed is worse than a loud failure.
 
+### Why Kokoro is the primary, not Edge
+
+Edge's neural voices sound marginally more natural, but its synthesize endpoint
+returns an empty **`403 Forbidden` from datacenter egress IPs** — verified from
+both the dev sandbox *and* a GitHub-hosted `ubuntu-latest` runner (the
+`Probe - Edge TTS reachability` workflow). This pipeline runs on GitHub Actions
+and a render VM — both datacenter IPs — so Edge cannot be its backbone. Kokoro
+has **zero external dependency**: once the weights are cached it needs no
+network at all, so it behaves identically everywhere and can't be rate-limited,
+blocked, or deprecated out from under the pipeline. That reliability is decisive;
+Edge stays in the catalog for anyone rendering from a residential connection.
+
+Kokoro voice quality (its own published grades): `af_heart` **A** and
+`af_bella` **A-** (American female) are the most natural overall; `bf_emma`
+**B-** is the best British voice (the default). Weights default to `q8`
+(`VOICEOVER_KOKORO_DTYPE`) for a small, fast CPU download; set `fp32` for maximum
+fidelity where the time and disk allow.
+
 ## Engine selection — `VOICEOVER_ENGINE`
 
 | Mode | Behaviour |
 |---|---|
-| `auto` (default) | Use the resolved voice's native engine. If it is Edge and Edge is unreachable, **throw** — unless `VOICEOVER_ALLOW_SAPI_FALLBACK=true`, which allows degrading to the gender-matched offline voice with a loud warning. |
-| `edge` | Force the neural engine; fail if unreachable. Never degrades. |
-| `sapi` | Force the offline engine (maps any request to its gender-matched offline voice). Used by CI/tests and any host with no outbound access to Microsoft's TTS endpoint. |
+| `auto` (default) | Use the resolved voice's native engine. Kokoro and offline voices just run; an **Edge** voice that is unreachable **throws** — unless `VOICEOVER_ALLOW_SAPI_FALLBACK=true`, which degrades to the gender-matched offline voice with a loud warning. |
+| `kokoro` | Force the self-hosted Kokoro engine, mapping any request to its gender-matched Kokoro voice. The reliable choice for the automated pipeline. |
+| `edge` | Force the Edge neural engine; fail if unreachable (which it is from datacenter IPs — really for residential/local use). Never degrades. |
+| `sapi` | Force the offline engine (maps any request to its gender-matched offline voice). Used by tests and any host with no neural engine available. |
 
 The default refuses to silently swap a neural voice for the robotic one — same
 "halt rather than ship something visibly worse" stance as script-generator.
+Because the default *voice* is now a Kokoro voice, `auto` runs entirely
+self-hosted out of the box; no egress, no key.
 
 ### A note on the Edge endpoint
 
 Edge's synthesize endpoint is DRM-gated: every connection carries a `Sec-MS-GEC`
 token derived from the current time (`src/engines/edge.ts`). The token is
-time-validated server-side, and the endpoint also blocks some datacenter egress
-IPs, returning an empty `403`. Where Edge is unreachable (some CI sandboxes),
-use `VOICEOVER_ENGINE=sapi`. GitHub-hosted `ubuntu-latest` runners normally
-reach it fine.
+time-validated server-side, and the endpoint **blocks datacenter egress IPs**,
+returning an empty `403` — confirmed from both the dev sandbox and a GitHub
+`ubuntu-latest` runner via the `Probe - Edge TTS reachability` workflow
+(`.smoke-test/probe-edge-tts.mts`). That's why Edge is not the pipeline default;
+use it only via `VOICEOVER_ENGINE=edge` from a residential/local machine.
 
 ## Output
 
@@ -97,10 +121,16 @@ sent as a targeted `changedSegmentIds` re-render (see `docs/PIPELINE.md`).
 ## Tests
 
 - `.smoke-test/test-voiceover.mts` — pure logic: DRM token derivation, timing
-  math, voice-library integrity. No network, no audio; runs in a second.
+  math, voice-library integrity, Kokoro chunk-splitter + WAV encoder. No network,
+  no audio; runs in a second.
 - `.smoke-test/e2e-voiceover.mts` — full service through an in-process S3 store
   (s3rver): uploads `script.json`, runs `runVoiceover`, generates **real audio**
-  (forces `VOICEOVER_ENGINE=sapi`, since Edge is unreachable in CI), then proves
-  the timing by feeding it through render-server's **own** `buildInputProps` +
+  (defaults to `VOICEOVER_ENGINE=kokoro` — self-hosted, so real neural audio in
+  CI; override with `=sapi` on a host without the Kokoro weights), then proves the
+  timing by feeding it through render-server's **own** `buildInputProps` +
   `buildChunkPlan` — the planner accepts it into a gap-free frame plan or the
-  test fails.
+  test fails. Verified: `voiceover.wav` @ 24 kHz, timing total == measured audio,
+  gap-free, one entry per segment, startFrames land where the planner expects.
+- `.github/workflows/probe-edge-tts.yml` — one-off `workflow_dispatch` diagnostic
+  that runs a real Edge synthesis on an ubuntu runner (the reachability evidence
+  above).

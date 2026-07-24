@@ -42,6 +42,9 @@ media-cache/
 *.onnx
 models/
 
+# Voice-comparison samples (throwaway listening artifacts, regenerable)
+services/voiceover/samples/
+
 # Logs
 *.log
 logs/

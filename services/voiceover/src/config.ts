@@ -3,20 +3,24 @@ import { DEFAULT_VOICE_ID } from "./voices.js";
 
 /**
  * How the service selects a synthesis engine.
- *  - "auto" — use the resolved voice's native engine (edge for library voices).
- *             If that is Edge and Edge is unreachable, THROW, unless
- *             `allowSapiFallback` is set. No silent quality degradation.
- *  - "edge" — force the Edge neural engine (fail if unreachable).
- *  - "sapi" — force the offline Windows engine, mapping the requested voice to
- *             its gender-matched offline voice. Used by CI/tests and by any
- *             environment with no outbound access to Microsoft's TTS endpoint.
+ *  - "auto"   — use the resolved voice's native engine. Kokoro and offline
+ *               voices just run; an Edge voice that is unreachable THROWS unless
+ *               `allowSapiFallback` is set. No silent quality degradation.
+ *  - "kokoro" — force the self-hosted Kokoro neural engine (maps any request to
+ *               its gender-matched Kokoro voice). Dependency-free, so this is
+ *               the reliable choice for the automated pipeline.
+ *  - "edge"   — force the Edge neural engine (fail if unreachable — which it is
+ *               from datacenter IPs, so this is really for residential/local use).
+ *  - "sapi"   — force the offline Windows engine, mapping the requested voice to
+ *               its gender-matched offline voice. Used by tests and hosts with no
+ *               neural engine available.
  */
-export type EngineMode = "auto" | "edge" | "sapi";
+export type EngineMode = "auto" | "kokoro" | "edge" | "sapi";
 
 function engineMode(): EngineMode {
   const raw = (process.env.VOICEOVER_ENGINE ?? "auto").toLowerCase();
-  if (raw === "auto" || raw === "edge" || raw === "sapi") return raw;
-  throw new Error(`VOICEOVER_ENGINE must be auto|edge|sapi, got "${raw}"`);
+  if (raw === "auto" || raw === "kokoro" || raw === "edge" || raw === "sapi") return raw;
+  throw new Error(`VOICEOVER_ENGINE must be auto|kokoro|edge|sapi, got "${raw}"`);
 }
 
 export const config = {

@@ -6,7 +6,7 @@ import type { LibraryVoice } from "../voices.js";
  * implementation of this interface plus a registry entry.
  */
 export interface TtsEngine {
-  readonly kind: "edge" | "sapi";
+  readonly kind: "edge" | "kokoro" | "sapi";
 
   /**
    * Whether this engine can run right now — network reachable, binary/runtime

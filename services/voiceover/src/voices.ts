@@ -18,7 +18,7 @@
  */
 
 export type VoiceGender = "male" | "female";
-export type VoiceEngineKind = "edge" | "sapi";
+export type VoiceEngineKind = "edge" | "kokoro" | "sapi";
 
 export interface LibraryVoice {
   /** Stable id stored in review-state.json.voiceId and passed to the engine. */
@@ -38,6 +38,12 @@ export interface LibraryVoice {
    * Unused for edge voices, whose `id` is the Edge voice ShortName as-is.
    */
   systemName?: string;
+  /**
+   * For kokoro voices: the model's own voice name (e.g. "bm_george"). Kept
+   * separate from `id` so the library id can stay descriptive/namespaced while
+   * the engine receives exactly the token it expects.
+   */
+  engineVoice?: string;
 }
 
 export const VOICE_LIBRARY: readonly LibraryVoice[] = [
@@ -59,13 +65,35 @@ export const VOICE_LIBRARY: readonly LibraryVoice[] = [
   // -- Canadian --
   { id: "en-CA-LiamNeural", label: "Liam — Canadian, male", gender: "male", locale: "en-CA", accent: "Canadian", engine: "edge" },
   { id: "en-CA-ClaraNeural", label: "Clara — Canadian, female", gender: "female", locale: "en-CA", accent: "Canadian", engine: "edge" },
+  // -- Kokoro-82M (self-hosted neural, Apache-2.0, runs on CPU, 24kHz native) --
+  // The pipeline's dependency-free neural option: no egress, no key, identical
+  // locally and on the render VM. `engineVoice` is the model's own voice name;
+  // the parenthetical is Kokoro's published quality grade for that voice.
+  { id: "kokoro-af-heart", label: "Heart — American, female (Kokoro, grade A)", gender: "female", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "af_heart" },
+  { id: "kokoro-af-bella", label: "Bella — American, female (Kokoro, grade A-)", gender: "female", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "af_bella" },
+  { id: "kokoro-am-michael", label: "Michael — American, male (Kokoro, grade C+)", gender: "male", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "am_michael" },
+  { id: "kokoro-am-fenrir", label: "Fenrir — American, male (Kokoro, grade C+)", gender: "male", locale: "en-US", accent: "American", engine: "kokoro", engineVoice: "am_fenrir" },
+  { id: "kokoro-bf-emma", label: "Emma — British, female (Kokoro, grade B-)", gender: "female", locale: "en-GB", accent: "British", engine: "kokoro", engineVoice: "bf_emma" },
+  { id: "kokoro-bf-isabella", label: "Isabella — British, female (Kokoro, grade C)", gender: "female", locale: "en-GB", accent: "British", engine: "kokoro", engineVoice: "bf_isabella" },
+  { id: "kokoro-bm-george", label: "George — British, male (Kokoro, grade C)", gender: "male", locale: "en-GB", accent: "British", engine: "kokoro", engineVoice: "bm_george" },
+  { id: "kokoro-bm-fable", label: "Fable — British, male (Kokoro, grade C)", gender: "male", locale: "en-GB", accent: "British", engine: "kokoro", engineVoice: "bm_fable" },
   // -- Offline fallback (Windows System.Speech) --
   { id: "sapi-david", label: "David — offline, male", gender: "male", locale: "en-US", accent: "American (offline)", engine: "sapi", systemName: "David" },
   { id: "sapi-zira", label: "Zira — offline, female", gender: "female", locale: "en-US", accent: "American (offline)", engine: "sapi", systemName: "Zira" },
 ];
 
-/** The narrator used when a job carries no explicit voiceId. British male reads as European to the target audience. */
-export const DEFAULT_VOICE_ID = "en-GB-RyanNeural";
+/**
+ * The narrator used when a job carries no explicit voiceId.
+ *
+ * A Kokoro voice, deliberately: the default must work where the pipeline runs
+ * (GitHub Actions + the render VM), and Edge 403s from those datacenter IPs
+ * (verified — see engines/edge.ts). "bf_emma" is Kokoro's best-graded British
+ * voice, so it reads as European while staying self-hosted and dependency-free.
+ * Override per-run with VOICEOVER_DEFAULT_VOICE, or per-video from the review
+ * dashboard via review-state.json.voiceId (e.g. "kokoro-af-heart" for Kokoro's
+ * top-graded voice, or an en-GB Edge voice when rendering from a residential IP).
+ */
+export const DEFAULT_VOICE_ID = "kokoro-bf-emma";
 
 const VOICE_BY_ID = new Map(VOICE_LIBRARY.map((v) => [v.id, v]));
 
@@ -95,4 +123,10 @@ export function sapiEquivalent(voice: LibraryVoice): LibraryVoice {
   const match = VOICE_LIBRARY.find((v) => v.engine === "sapi" && v.gender === voice.gender);
   // Every gender has a sapi voice in the catalog; the ?? keeps types honest.
   return match ?? getVoice("sapi-david");
+}
+
+/** The gender-matched Kokoro voice, used when VOICEOVER_ENGINE=kokoro forces the self-hosted engine. */
+export function kokoroEquivalent(voice: LibraryVoice): LibraryVoice {
+  const match = VOICE_LIBRARY.find((v) => v.engine === "kokoro" && v.gender === voice.gender);
+  return match ?? getVoice("kokoro-af-heart");
 }
