@@ -38,6 +38,17 @@ export interface ProviderDefinition {
   /** Operational caveats worth knowing before relying on it. */
   notes?: string;
   /**
+   * Whether this provider's TERMS permit production/commercial use — a licensing
+   * fact, entirely separate from whether its output passes quality validation.
+   *
+   * "prototype-only" providers still run (so the pipeline is testable end-to-end
+   * without spending money), but using one to produce a monetized video is
+   * outside its terms. buildProviderChain surfaces a loud warning rather than
+   * silently disabling them, because a dev machine with no paid key still needs
+   * a working pipeline. See docs/LICENSING.md §3.2.
+   */
+  productionUse: "permitted" | "prototype-only";
+  /**
    * Set when a provider has been MEASURED to fail the validation bar. It stays
    * in the catalog (so the qualification harness can re-test it, and so the
    * evidence is not lost) but is excluded from the live chain. Quality is not
@@ -62,6 +73,9 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free tier, no credit card",
     howToGetKey: "https://aistudio.google.com/app/apikey — sign in with a Google account, 'Create API key'. No billing setup required.",
     notes: "Highest free output ceiling of the four; best candidate to actually clear the word budgets.",
+    // Free AI Studio tier: not for revenue-generating use, and Google may train
+    // on free-tier inputs. Paid/Vertex is the commercial path.
+    productionUse: "prototype-only",
     create: (apiKey, model) => new GeminiProvider({ apiKey, model, maxTokens: 16000 }),
   },
   {
@@ -79,7 +93,13 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free with any GitHub account (rate-limited)",
     howToGetKey:
       "https://github.com/settings/personal-access-tokens — 'Fine-grained token', no repo access needed, set Account permissions > Models to 'Read-only'. Copy the ghp_/github_pat_ value.",
-    notes: "QUALIFIED (measured): gpt-4o passed both bracket structures — rapid-wire 212-220, the-explainer 334-385 words/segment — with tight length control. Primary free provider.",
+    notes: "QUALIFIED (measured): gpt-4o passed both bracket structures — rapid-wire 212-220, the-explainer 334-385 words/segment — with tight length control. DEV DEFAULT ONLY — see productionUse.",
+    // GitHub's docs scope the free tier to prototyping: "once you are ready to
+    // bring your application to production, opt in to paid usage". Kept as the
+    // dev default so the pipeline runs end-to-end for free during development;
+    // must be swapped for a paid/commercial-permitted provider before publishing
+    // monetized video. docs/LICENSING.md §3.2.
+    productionUse: "prototype-only",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "github-models", apiKey, baseURL: "https://models.inference.ai.azure.com", model, maxTokens: 8000 }),
   },
@@ -98,6 +118,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free, ~1M tokens/day",
     howToGetKey: "https://cloud.cerebras.ai — sign up, then API Keys > Create. No credit card.",
     notes: "Serves 3 models (zai-glm-4.7, gpt-oss-120b, gemma-4-31b); GLM-4.7 chosen for long-form.",
+    productionUse: "prototype-only",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "cerebras", apiKey, baseURL: "https://api.cerebras.ai/v1", model, maxTokens: 8000 }),
   },
@@ -113,7 +134,10 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     maxOutputTokens: 8000,
     cost: "Free experiment tier",
     howToGetKey: "https://console.mistral.ai/api-keys — sign up, create a key. Free 'Experiment' plan, no card.",
-    notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form.",
+    notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form. PROVEN on quality (428-455 words on the-explainer) — the paid tier is the leading production candidate at ~$0.50/mo at 2 videos/week.",
+    // The FREE "Experiment" tier is prototyping-only; the PAID tier permits
+    // commercial use. Flag reflects the free tier this key would use today.
+    productionUse: "prototype-only",
     disabledReason:
       "OPERATIONAL, not quality: length/insight PASS (the-explainer 428-455 in band), but the free Experiment tier " +
       "returns 429 partway through a single script's two-phase calls (plan + 6-7 segments + retries), so it cannot " +
@@ -135,6 +159,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Free tier (rate-limited: ~50 req/day without credits)",
     howToGetKey: "https://openrouter.ai/keys — sign up, create a key. Free models carry a ':free' suffix.",
     notes: "Gateway to many models; the :free tier is rate-limited and slow. Override model with SCRIPT_OPENROUTER_MODEL.",
+    productionUse: "prototype-only",
     disabledReason:
       "nemotron-3-super-120b passed rapid-wire (215-236) but TRUNCATED the-explainer at the 16k output cap, and ran " +
       "~6-7 min/structure (~15 min/script) — impractical. A smaller/faster free model might qualify; re-test via SCRIPT_OPENROUTER_MODEL.",
@@ -161,6 +186,7 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     howToGetKey: "https://console.groq.com/keys — sign up, 'Create API Key'. No credit card.",
     notes:
       "Free tier caps gpt-oss-120b at 8,000 tokens/minute (input+output), so retries are ~1/minute.",
+    productionUse: "prototype-only",
     disabledReason:
       "FAILS the length bar on every model tested. llama-3.3-70b-versatile produced 94-167 words/segment and " +
       "openai/gpt-oss-120b produced 139-196, against the-explainer's 300-450 requirement; gpt-oss also truncates " +
@@ -179,6 +205,8 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     cost: "Paid (~$0.10-0.15/script)",
     howToGetKey: "https://console.anthropic.com/settings/keys — requires billing.",
     notes: "Highest quality; used first when a key is present. Everything below is a free-tier fallback.",
+    // Paid API: commercial use permitted, outputs are yours.
+    productionUse: "permitted",
     create: (apiKey, model) =>
       new ClaudeProvider({
         apiKey,
@@ -207,6 +235,27 @@ export function buildProviderChain(env: NodeJS.ProcessEnv = process.env): Script
   return rankedCatalog()
     .filter((definition) => !definition.disabledReason && Boolean(env[definition.envKey]))
     .map((definition) => definition.create(env[definition.envKey]!, resolveModel(definition, env)));
+}
+
+/**
+ * The provider that would actually be used, and whether its terms permit
+ * production use. Returns null when nothing is configured.
+ *
+ * Deliberately advisory rather than enforcing: a dev machine with no paid key
+ * still needs a working pipeline, so a prototype-only provider runs and warns.
+ * The caller (runScriptGeneration) logs it on every run so it cannot be
+ * forgotten, and docs/LICENSING.md carries the detail.
+ */
+export function activeProviderLicensing(env: NodeJS.ProcessEnv = process.env): {
+  id: string;
+  label: string;
+  productionUse: ProviderDefinition["productionUse"];
+} | null {
+  const first = rankedCatalog().find(
+    (definition) => !definition.disabledReason && Boolean(env[definition.envKey]),
+  );
+  if (!first) return null;
+  return { id: first.id, label: first.label, productionUse: first.productionUse };
 }
 
 /** Which providers are configured vs missing — for the diagnostics command. */

@@ -2,6 +2,7 @@ import { JobStore, createLogger, scriptSchema, trendSchema } from "@ai-news/shar
 import { getStructure } from "@ai-news/shared/script-structure";
 import { buildProviders, config } from "./config.js";
 import { generateScript } from "./generate.js";
+import { activeProviderLicensing } from "./providers/registry.js";
 import { resolveJobStructure } from "./structureSelection.js";
 
 /**
@@ -17,6 +18,18 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
   const trend = await store.getJson(store.jobKey(jobId, "trend.json"), trendSchema);
   const structureId = await resolveJobStructure(store, jobId, logger);
   const structure = getStructure(structureId);
+
+  // Licensing guardrail: the free tiers are scoped to prototyping, so warn on
+  // every run rather than letting a dev-only provider quietly produce a script
+  // that gets monetized. Advisory by design — see docs/LICENSING.md §3.2.
+  const licensing = activeProviderLicensing();
+  if (licensing?.productionUse === "prototype-only") {
+    logger.warn(
+      { provider: licensing.id },
+      `${licensing.label} is a PROTOTYPE-ONLY tier: fine for development, NOT licensed for producing monetized video. ` +
+        "Switch to a paid/commercial-permitted provider before publishing (docs/LICENSING.md).",
+    );
+  }
 
   logger.info({ jobId, structureId, topic: trend.topic }, "Generating script");
 

@@ -33,6 +33,27 @@ Run `npx tsx .smoke-test/qualify-providers.mts`; `provider-status.mts` shows the
 
 **Primary is GitHub Models gpt-4o** — the only provider that cleared the full bar cleanly. gpt-4o controls per-segment length precisely (unlike Mistral, which over-writes and needs the lower-band target to stay in range).
 
+> ### ⚠️ The current default is DEVELOPMENT-ONLY
+>
+> GitHub Models' free tier is scoped by GitHub's own docs to prototyping — *"once
+> you are ready to bring your application to production, opt in to paid usage."*
+> It is kept as the default **so the pipeline runs end-to-end for free while
+> building**, but it is **not licensed for producing monetized video**.
+>
+> Every run logs a warning naming the provider (`productionUse: "prototype-only"`
+> in `registry.ts`). Before publishing, switch to a provider whose terms permit
+> commercial use. Measured costs for this pipeline's real token usage
+> (~9.4k in / 6.0k out per 15-min script) are **cents per month**:
+>
+> | Paid option | 2 videos/week | 1 video/day | Note |
+> |---|---|---|---|
+> | DeepSeek V4 Flash | $0.03/mo | $0.09/mo | cheapest viable; quality untested here |
+> | **Mistral Large 3** | **$0.48/mo** | $1.64/mo | **already proven to pass our bar** |
+> | Gemini 2.5 Flash | $0.08/mo | $0.27/mo | paid tier only |
+>
+> No free hosted tier (GitHub Models, Mistral, Gemini, OpenRouter, DeepSeek) permits
+> commercial production. Full analysis: [`docs/LICENSING.md`](../../docs/LICENSING.md).
+
 ### Realistic structure bands
 
 The per-segment word bands were re-based to match how developed prose actually comes out (floors ~180, wider bands, ceilings raised) — applied equally to all providers, so this is not per-provider leniency. The *quality* checks (novelty, verbatim, insight coverage) are unchanged. The segment prompt targets the **lower third** of each band, because models systematically over-write a stated target.
