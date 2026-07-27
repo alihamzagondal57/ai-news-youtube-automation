@@ -4,7 +4,7 @@ import { bundle } from "@remotion/bundler";
 import { type JobStore, type Logger, type RenderResult } from "@ai-news/shared";
 import { buildInputProps } from "./buildInputProps.js";
 import { config } from "./config.js";
-import { downloadJobAssets } from "./jobAssets.js";
+import { downloadReferencedMedia, readJobManifests } from "./jobAssets.js";
 import { AUDIO_CACHE_FILE, chunkPath, renderSegmented } from "./renderSegmented.js";
 import { buildChunkPlan } from "./segmentPlan.js";
 import { resolveJobTheme } from "./themeSelection.js";
@@ -28,8 +28,8 @@ export async function runRender(
   logger: Logger,
   options: RunRenderOptions = {},
 ): Promise<RenderResult> {
-  const assets = await downloadJobAssets(store, jobId);
-  logger.info({ jobId, dir: assets.dir }, "Downloaded job assets");
+  const assets = await readJobManifests(store, jobId);
+  logger.info({ jobId, dir: assets.dir }, "Read job manifests");
 
   const cacheDir = join(assets.dir, "render-cache");
   await mkdir(cacheDir, { recursive: true });
@@ -41,6 +41,12 @@ export async function runRender(
     const themeId = await resolveJobTheme(store, jobId, logger);
     const inputProps = buildInputProps(assets, { themeId });
     const { changedSegmentIds } = options;
+
+    // Only after inputProps exists do we know which clips it actually
+    // references (a segment whose stock clip already covers it never touches
+    // its alternatives) — download exactly those, not everything in the manifest.
+    await downloadReferencedMedia(store, jobId, assets.dir, inputProps);
+    logger.info({ jobId }, "Downloaded referenced media");
 
     // A targeted re-render is only meaningful if the previous chunks are still
     // around; pull whatever this job cached last time.

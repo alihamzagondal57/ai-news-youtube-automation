@@ -47,10 +47,15 @@ const SAMPLE_WORDS = [
 export const ThemePreview: React.FC<ThemePreviewProps> = ({ themeId, showLabel, mediaSrc }) => {
   const theme = getThemeOrDefault(themeId);
   const scale = useScale();
+  // A static single-still preview has no real segment timeline to sequence
+  // against, so it's always exactly one full-duration beat with no trim.
+  const media = mediaSrc
+    ? [{ src: mediaSrc, startFrame: 0, durationInFrames: 200, trimBeforeFrames: 0, trimAfterFrames: 200 }]
+    : [];
 
   return (
     <AbsoluteFill style={{ backgroundColor: theme.palette.base }}>
-      <ThemedBackdrop theme={theme} mediaSrc={mediaSrc} />
+      <ThemedBackdrop theme={theme} media={media} />
 
       {/* Segment-scoped so the lower-third's entry animation resolves the same
           way it does in the real composition. */}

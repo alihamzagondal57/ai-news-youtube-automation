@@ -23,11 +23,14 @@ function props(themeId: string): NewsVideoRenderProps {
     resolution: { width: 480, height: 270 },
     fps: 30,
     outroDurationInFrames: 30,
-    segments: [0, 1, 2].map((i) => ({
-      id: i, text: `Segment ${i}`, startFrame: i * 60, durationInFrames: 60,
-      mediaSrc: ["clip-red.mp4", "clip-magenta.mp4", "clip-red.mp4"][i],
-      lowerThirdText: "", breaking: false,
-    })),
+    segments: [0, 1, 2].map((i) => {
+      const src = ["clip-red.mp4", "clip-magenta.mp4", "clip-red.mp4"][i];
+      return {
+        id: i, text: `Segment ${i}`, startFrame: i * 60, durationInFrames: 60,
+        media: [{ src, startFrame: 0, durationInFrames: 60, trimBeforeFrames: 0, trimAfterFrames: 60 }],
+        lowerThirdText: "", breaking: false,
+      };
+    }),
     captionWords: [],
     tickerHeadlines: ["PROBE"],
     themeId: theme.id,

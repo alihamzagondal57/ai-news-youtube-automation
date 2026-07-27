@@ -29,9 +29,9 @@ const SEGMENTS = [
  * (720p, ~15s) — real jobs pass full 4K, full-length inputProps at render time
  * (see remotion/README.md); this is just fast enough to iterate on locally.
  *
- * mediaSrc is left empty on purpose: no stock footage is committed to the repo
+ * media is left empty on purpose: no stock footage is committed to the repo
  * (copyright-safe sourcing happens at pipeline runtime), so segments fall back
- * to the gradient placeholder in SegmentBackground.
+ * to the gradient placeholder in ThemedBackdrop.
  */
 export const sampleJobProps: NewsVideoProps = {
   title: "Sample Bulletin: Local Preview Fixture",
@@ -43,7 +43,7 @@ export const sampleJobProps: NewsVideoProps = {
     text: segment.text,
     startFrame: i * SEGMENT_FRAMES,
     durationInFrames: SEGMENT_FRAMES,
-    mediaSrc: "",
+    media: [],
     lowerThirdText: segment.lowerThirdText,
     breaking: segment.breaking,
   })),

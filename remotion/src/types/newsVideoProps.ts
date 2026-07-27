@@ -1,13 +1,29 @@
 import { z } from "zod";
 import { DEFAULT_THEME_ID } from "@ai-news/shared/theme";
 
+export const mediaClipPropsSchema = z.object({
+  /** staticFile()-resolvable path to a stock clip. */
+  src: z.string(),
+  /** Frames into the SEGMENT's own (Sequence-local) timeline this beat starts at. */
+  startFrame: z.number().int().nonnegative(),
+  durationInFrames: z.number().int().positive(),
+  trimBeforeFrames: z.number().int().nonnegative(),
+  trimAfterFrames: z.number().int().positive(),
+});
+export type MediaClipProps = z.infer<typeof mediaClipPropsSchema>;
+
 export const segmentPropsSchema = z.object({
   id: z.number().int().nonnegative(),
   text: z.string(),
   startFrame: z.number().int().nonnegative(),
   durationInFrames: z.number().int().positive(),
-  /** staticFile()-resolvable path to stock footage for this segment, or empty for a gradient placeholder. */
-  mediaSrc: z.string().default(""),
+  /**
+   * One or more clips sequenced behind this segment (never a single source):
+   * a stock clip is almost never exactly as long as the segment it backs, so
+   * render-server either trims one clip to fit or cuts between several — see
+   * infra/render-server/src/mediaTimeline.ts. Empty for a gradient placeholder.
+   */
+  media: z.array(mediaClipPropsSchema).default([]),
   lowerThirdText: z.string().default(""),
   breaking: z.boolean().default(false),
 });

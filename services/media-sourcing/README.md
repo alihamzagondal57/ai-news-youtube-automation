@@ -23,7 +23,7 @@ across a manifest, not one silently dominating.
 | Signal | Weight | Why |
 |---|---|---|
 | Keyword relevance vs. tags | 0.55 | An off-topic clip is useless no matter how well-formed. |
-| Duration ≥ segment length | 0.20 | **Higher than usual for stock footage.** The render composites each clip as a static full-segment background with no looping (`remotion/src/components/media/SegmentBackground.tsx`) — a clip shorter than its segment freezes on its last frame for the remainder, a visible defect, not a minor gap. *(Actually looping/holding short clips against long segments is tracked as a separate follow-up; this scoring just biases toward the least-bad outcome today.)* |
+| Duration ≥ segment length | 0.20 | **Higher than usual for stock footage**, and no longer the only line of defense. render-server's `mediaTimeline.ts` now trims a longer-than-needed clip to fit and **sequences through the alternatives** when the primary is too short — never freezing — so this weight is a bias toward needing fewer cuts to fill a segment, not a workaround for a defect. See `infra/render-server/README.md` (or `mediaTimeline.ts`'s own doc comment). |
 | Landscape orientation | 0.15 | Matches the 16:9 render frame; portrait needs more aggressive `objectFit: cover` cropping. |
 | Resolution (≥1920px best) | 0.10 | Render composites at up to 4K via `objectFit: cover`; stock footage is rarely native 4K anyway (see `.smoke-test/smoke-test-4k.mts`), so 1080p is the real ceiling, not a compromise. |
 

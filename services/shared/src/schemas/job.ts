@@ -119,6 +119,14 @@ export type MediaLicense = z.infer<typeof mediaLicenseSchema>;
 const mediaAlternativeSchema = z.object({
   file: z.string(),
   license: mediaLicenseSchema,
+  /**
+   * Real, ffprobe-measured duration of the downloaded file — required, not
+   * estimated. render-server's per-segment media timeline (trim a clip longer
+   * than its segment; sequence through alternatives when the primary is
+   * shorter) is built entirely from these numbers, so a wrong or missing value
+   * would desync visuals from the narration or leave a frozen frame.
+   */
+  durationSeconds: z.number().positive(),
 });
 export type MediaAlternative = z.infer<typeof mediaAlternativeSchema>;
 
@@ -126,6 +134,8 @@ export const mediaAssetSchema = z.object({
   segmentId: z.number().int().nonnegative(),
   file: z.string(),
   license: mediaLicenseSchema,
+  /** See mediaAlternativeSchema.durationSeconds — same requirement, same reason. */
+  durationSeconds: z.number().positive(),
   /**
    * 3-4 next-best-ranked clips for this segment, downloaded alongside the
    * selected one. Lets the review dashboard's clip-swap show and apply an

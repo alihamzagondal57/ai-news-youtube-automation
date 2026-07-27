@@ -196,10 +196,16 @@ async function main() {
         captions: { jobId: JOB_A, words: [] },
         mediaManifest: manifestA,
       } as never);
-      const mediaSrcMatches = props.segments.every((seg, i) => seg.mediaSrc === manifestA.clips[i].file);
+      // Every segment's clip is far longer than its estSeconds-derived timing here
+      // (real stock clips vs. a fake few-second fixture timing), so mediaTimeline's
+      // Case 1 (trim to fit) applies uniformly: exactly one media entry per segment,
+      // sourced from that segment's own primary clip.
+      const mediaMatches = props.segments.every(
+        (seg, i) => seg.media.length === 1 && seg.media[0].src === manifestA.clips[i].file,
+      );
       const plan = buildChunkPlan(props);
-      propsOk = mediaSrcMatches && plan.chunks.length === SCRIPT_A.segments.length + 1; // + outro chunk
-      propsDetail = `mediaSrc: ${props.segments.map((s) => s.mediaSrc).join(", ")}; ${plan.chunks.length} chunks planned`;
+      propsOk = mediaMatches && plan.chunks.length === SCRIPT_A.segments.length + 1; // + outro chunk
+      propsDetail = `media: ${props.segments.map((s) => s.media.map((m) => m.src).join("+")).join(", ")}; ${plan.chunks.length} chunks planned`;
     } catch (err) {
       propsDetail = `render-server rejected the manifest: ${(err as Error).message}`;
     }

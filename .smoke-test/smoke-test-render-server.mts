@@ -4,7 +4,7 @@
 // real render job takes on the GCE VM:
 //
 //   upload fixtures to jobs/{jobId}/...  (JobStore.putJson / putFile)
-//     -> runRender()                     (downloadJobAssets -> Remotion render -> putFile)
+//     -> runRender()                     (readJobManifests -> buildInputProps -> downloadReferencedMedia -> Remotion render -> putFile)
 //       -> download render.mp4 back      (JobStore.downloadToFile) and assert it's non-empty
 //
 // The only things stubbed vs. production are the HTTP layer (POST /render) and
@@ -88,13 +88,18 @@ const captions = {
 
 const license = { source: "pixabay", licenseType: "free", url: "https://pixabay.com" } as const;
 
-/** Distinct per-segment clips so a swap is actually visible in the output. */
+/**
+ * Distinct per-segment clips so a swap is actually visible in the output.
+ * Each generated clip is 7s (see generateColorClip below) against a 5s
+ * segment, so this fixture exercises mediaTimeline.ts's Case 1 (trim a clip
+ * longer than its segment) on every render this test does.
+ */
 function manifestWithClips(segment1Clip: string) {
   return {
     jobId: JOB_ID,
     clips: [
-      { segmentId: 0, file: "clip-red.mp4", license },
-      { segmentId: 1, file: segment1Clip, license },
+      { segmentId: 0, file: "clip-red.mp4", license, durationSeconds: 7, alternatives: [] },
+      { segmentId: 1, file: segment1Clip, license, durationSeconds: 7, alternatives: [] },
     ],
     music: { file: "music.wav", license },
     sfx: [],

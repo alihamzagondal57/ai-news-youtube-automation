@@ -1,10 +1,11 @@
 import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import type { Theme } from "@ai-news/shared/theme";
+import type { MediaClipProps } from "../../types/newsVideoProps";
 import { ThemedBackdrop, hexWithAlpha } from "./ThemedBackdrop";
 
 interface ThemedSegmentSlideProps {
-  mediaSrc: string;
+  media: MediaClipProps[];
   theme: Theme;
   /** Local duration of the Sequence this sits in, including overlap padding. */
   durationInFrames: number;
@@ -26,7 +27,7 @@ interface ThemedSegmentSlideProps {
  * lower-thirds stay locked to the audio regardless of which theme is applied.
  */
 export const ThemedSegmentSlide: React.FC<ThemedSegmentSlideProps> = ({
-  mediaSrc,
+  media,
   theme,
   durationInFrames,
   transitionFrames,
@@ -80,7 +81,7 @@ export const ThemedSegmentSlide: React.FC<ThemedSegmentSlideProps> = ({
 
   return (
     <AbsoluteFill style={{ opacity, transform, clipPath }}>
-      <ThemedBackdrop theme={theme} mediaSrc={mediaSrc} />
+      <ThemedBackdrop theme={theme} media={media} />
       {dipOverlay > 0 ? (
         <AbsoluteFill style={{ background: hexWithAlpha(theme.palette.accent, dipOverlay * 0.85) }} />
       ) : null}

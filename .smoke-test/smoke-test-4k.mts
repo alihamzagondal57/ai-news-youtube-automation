@@ -59,7 +59,7 @@ function buildProps(segmentCount: number, segFrames: number, outroFrames: number
       text: `Segment ${i} narration for the 4K render test.`,
       startFrame: i * segFrames,
       durationInFrames: segFrames,
-      mediaSrc: clips[i],
+      media: [{ src: clips[i], startFrame: 0, durationInFrames: segFrames, trimBeforeFrames: 0, trimAfterFrames: segFrames }],
       lowerThirdText: `Segment ${i} Headline At Four K`,
       breaking: false,
     })),

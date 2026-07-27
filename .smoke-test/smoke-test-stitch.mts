@@ -57,7 +57,7 @@ function buildProps(clipBySegment: string[]): NewsVideoRenderProps {
     text: `Segment ${i} narration text for the stitching smoke test.`,
     startFrame: i * SEGMENT_FRAMES,
     durationInFrames: SEGMENT_FRAMES,
-    mediaSrc: clipBySegment[i],
+    media: [{ src: clipBySegment[i], startFrame: 0, durationInFrames: SEGMENT_FRAMES, trimBeforeFrames: 0, trimAfterFrames: SEGMENT_FRAMES }],
     lowerThirdText: `Segment ${i} Headline`,
     breaking: false,
   }));
@@ -111,7 +111,7 @@ async function main() {
   await mkdir(publicDir, { recursive: true });
   await mkdir(cacheDir, { recursive: true });
 
-  // Distinct flat colours per segment: with the default empty mediaSrc every
+  // Distinct flat colours per segment: with the default empty media every
   // segment renders the same gradient placeholder, which would make a "clip
   // swap" invisible and the whole test vacuous.
   const colors = { red: "red", green: "green", blue: "blue", yellow: "yellow", magenta: "magenta" };

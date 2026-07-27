@@ -59,7 +59,7 @@ export const NewsVideo: React.FC<NewsVideoProps> = ({
         return (
           <Sequence key={segment.id} from={overlapStart} durationInFrames={localDuration}>
             <ThemedSegmentSlide
-              mediaSrc={segment.mediaSrc}
+              media={segment.media}
               theme={theme}
               durationInFrames={localDuration}
               transitionFrames={transitionFrames}

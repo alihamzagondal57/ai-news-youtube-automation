@@ -90,16 +90,22 @@ export async function runMediaSourcing(jobId: string): Promise<void> {
       );
 
       const primaryFile = `clip-${segment.id}.mp4`;
-      await downloadAndUpload(store, jobId, work, primary, primaryFile, logger);
+      const primaryDuration = await downloadAndUpload(store, jobId, work, primary, primaryFile, logger);
 
       const altAssets = [];
       for (let i = 0; i < alternatives.length; i++) {
         const file = `clip-${segment.id}-alt${i + 1}.mp4`;
-        await downloadAndUpload(store, jobId, work, alternatives[i], file, logger);
-        altAssets.push({ file, license: licenseFor(alternatives[i]) });
+        const altDuration = await downloadAndUpload(store, jobId, work, alternatives[i], file, logger);
+        altAssets.push({ file, license: licenseFor(alternatives[i]), durationSeconds: altDuration });
       }
 
-      clips.push({ segmentId: segment.id, file: primaryFile, license: licenseFor(primary), alternatives: altAssets });
+      clips.push({
+        segmentId: segment.id,
+        file: primaryFile,
+        license: licenseFor(primary),
+        durationSeconds: primaryDuration,
+        alternatives: altAssets,
+      });
       pickedThisJob.push(primary, ...alternatives);
     }
 
@@ -125,6 +131,12 @@ export async function runMediaSourcing(jobId: string): Promise<void> {
   }
 }
 
+/**
+ * Returns the real, ffprobe-measured duration — not the provider's own
+ * metadata — since that's what render-server's media timeline (trim/sequence
+ * logic) is built from. Trusting the provider's claimed duration would risk a
+ * render-time mismatch against the actual decodable footage.
+ */
 async function downloadAndUpload(
   store: JobStore,
   jobId: string,
@@ -132,7 +144,7 @@ async function downloadAndUpload(
   candidate: Candidate,
   file: string,
   logger: ReturnType<typeof createLogger>,
-): Promise<void> {
+): Promise<number> {
   const localPath = join(workDir, file);
   await downloadClip(candidate.downloadUrl, localPath);
   const probed = await probeClip(localPath);
@@ -141,6 +153,7 @@ async function downloadAndUpload(
   }
   await store.putFile(store.jobKey(jobId, `media/${file}`), localPath, "video/mp4");
   logger.debug({ jobId, file, provider: candidate.provider, width: probed.width, height: probed.height, durationSeconds: probed.durationSeconds }, "Downloaded and uploaded clip");
+  return probed.durationSeconds;
 }
 
 // CLI: `node dist/index.js <jobId>`
