@@ -8,6 +8,7 @@
     "services/trend-research",
     "services/script-generator",
     "services/voiceover",
+    "services/caption-sync",
     "services/media-sourcing",
     "services/metadata-generator",
     "services/youtube-uploader",

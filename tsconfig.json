@@ -4,6 +4,7 @@
     { "path": "services/shared" },
     { "path": "services/script-generator" },
     { "path": "services/voiceover" },
+    { "path": "services/caption-sync" },
     { "path": "infra/render-server" }
   ]
 }
