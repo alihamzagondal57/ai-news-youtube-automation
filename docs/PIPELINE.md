@@ -29,7 +29,7 @@ jobs/{jobId}/
 └── youtube-result.json        # from youtube-uploader
 ```
 
-Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`). Rotation history lives at `state/theme-rotation.json`, `state/script-structure-rotation.json`, and `state/voice-rotation.json` — the three independent variety axes (look, shape, voice), all driven by the same shared `rotate()` helper.
+Reusable style/voice presets live outside the per-job tree at `presets/{presetId}.json` (`stylePresetSchema`). Rotation history lives at `state/theme-rotation.json`, `state/script-structure-rotation.json`, and `state/voice-rotation.json` — the three independent variety axes (look, shape, voice), all driven by the same shared `rotate()` helper. `state/media-usage.json` is a related but separate mechanism: a soft, graceful-degrade exclusion list (not a strict rotation) that steers media-sourcing away from stock clips used recently on other jobs — see `services/media-sourcing/README.md`.
 
 ### Script structure selection
 Each video is written against one of 13 script skeletons (`services/shared/src/script-structure`), varying opening move, throughline, segment count/depth, analysis placement, and outro — so consecutive videos don't share a shape, only a format. This is the counterpart to theme rotation: themes vary the *look*, structures vary the *script*, and the inauthentic-content policy penalises sameness in both.

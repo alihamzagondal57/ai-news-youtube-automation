@@ -5,6 +5,7 @@
     { "path": "services/script-generator" },
     { "path": "services/voiceover" },
     { "path": "services/caption-sync" },
+    { "path": "services/media-sourcing" },
     { "path": "infra/render-server" }
   ]
 }

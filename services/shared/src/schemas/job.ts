@@ -116,10 +116,23 @@ export const mediaLicenseSchema = z.object({
 });
 export type MediaLicense = z.infer<typeof mediaLicenseSchema>;
 
+const mediaAlternativeSchema = z.object({
+  file: z.string(),
+  license: mediaLicenseSchema,
+});
+export type MediaAlternative = z.infer<typeof mediaAlternativeSchema>;
+
 export const mediaAssetSchema = z.object({
   segmentId: z.number().int().nonnegative(),
   file: z.string(),
   license: mediaLicenseSchema,
+  /**
+   * 3-4 next-best-ranked clips for this segment, downloaded alongside the
+   * selected one. Lets the review dashboard's clip-swap show and apply an
+   * alternative instantly, with no live re-query. Defaulted so manifests
+   * predating this field still validate.
+   */
+  alternatives: z.array(mediaAlternativeSchema).default([]),
 });
 export type MediaAsset = z.infer<typeof mediaAssetSchema>;
 

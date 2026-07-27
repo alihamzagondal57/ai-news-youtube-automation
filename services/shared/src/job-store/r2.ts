@@ -105,7 +105,19 @@ export class JobStore {
     );
   }
 
-  async getJson<T>(key: string, schema: z.ZodType<T>): Promise<T> {
+  /**
+   * `Schema extends z.ZodTypeAny` + `z.output<Schema>`, not the more obvious
+   * `<T>(schema: z.ZodType<T>)`: ZodType is parameterized by both Output and
+   * Input, and a schema with `.default(...)` on a nested field makes those
+   * diverge (Input has the field optional, Output doesn't). Pinning T only via
+   * `z.ZodType<T>` asks TS to infer one T from both a covariant (Output) and a
+   * contravariant (Input) position at once, and it can silently resolve to the
+   * wrong one — the caller ends up with an Input-shaped type that has an
+   * optional field the parsed OUTPUT never actually has. Binding the whole
+   * schema type and extracting Output with `z.output<>` avoids the dual-position
+   * inference entirely.
+   */
+  async getJson<Schema extends z.ZodTypeAny>(key: string, schema: Schema): Promise<z.output<Schema>> {
     const response = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     const body = await response.Body?.transformToString();
     if (body === undefined) {
@@ -131,7 +143,7 @@ export class JobStore {
    * throwing. For genuinely optional artifacts — review state, rotation history —
    * where "not written yet" is a normal first-run condition rather than an error.
    */
-  async getJsonIfExists<T>(key: string, schema: z.ZodType<T>): Promise<T | null> {
+  async getJsonIfExists<Schema extends z.ZodTypeAny>(key: string, schema: Schema): Promise<z.output<Schema> | null> {
     try {
       return await this.getJson(key, schema);
     } catch (err) {

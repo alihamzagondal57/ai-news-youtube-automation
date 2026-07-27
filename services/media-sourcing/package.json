@@ -1,0 +1,21 @@
+{
+  "name": "@ai-news/media-sourcing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-news/shared": "*",
+    "dotenv": "^16.4.5",
+    "ffprobe-static": "^3.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.13",
+    "typescript": "^5.5.4"
+  }
+}
