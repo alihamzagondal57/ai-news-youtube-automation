@@ -16,7 +16,7 @@ jobs/{jobId}/
 │   ├── music.mp3
 │   └── sfx/*.mp3
 ├── metadata.json            # from metadata-generator (incl. containsSyntheticMedia disclosure flag)
-├── thumbnail.png             # from metadata-generator
+├── thumbnail.png             # from metadata-generator -- NOT YET IMPLEMENTED, see services/metadata-generator/README.md
 ├── render.mp4                # from remotion, via render-server
 ├── renders/                   # targeted-re-render cache: per-chunk video + the continuous audio track
 │   ├── segment-*.mp4          #   video-only chunks, one per segment

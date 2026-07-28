@@ -1,0 +1,21 @@
+{
+  "name": "@ai-news/metadata-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-news/shared": "*",
+    "@ai-news/script-generator": "*",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.13",
+    "typescript": "^5.5.4"
+  }
+}

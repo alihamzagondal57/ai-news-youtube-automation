@@ -6,6 +6,7 @@
     { "path": "services/voiceover" },
     { "path": "services/caption-sync" },
     { "path": "services/media-sourcing" },
+    { "path": "services/metadata-generator" },
     { "path": "infra/render-server" }
   ]
 }
