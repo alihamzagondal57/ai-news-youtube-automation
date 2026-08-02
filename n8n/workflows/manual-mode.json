@@ -1,0 +1,834 @@
+{
+  "name": "Manual Mode - Full Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Start a Manual-Mode Video",
+        "formDescription": "Supplies the topic directly - trend-research is skipped in manual mode.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Niche",
+              "fieldName": "niche",
+              "fieldType": "text",
+              "placeholder": "news-europe",
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "Topic",
+              "fieldName": "topic",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Angle",
+              "fieldName": "angle",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Source URLs (one per line)",
+              "fieldName": "sourceUrls",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Source Summaries (one per line)",
+              "fieldName": "sourceSummaries",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "On form submission",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "manual-mode-start"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function uuidv4() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\nconst f = $input.first().json;\nconst jobId = uuidv4();\nconst niche = (f.niche || 'news-europe').trim();\nconst sourceUrls = String(f.sourceUrls || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst sourceSummaries = String(f.sourceSummaries || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst trend = { jobId, topic: f.topic, angle: f.angle, sourceUrls, sourceSummaries };\nfunction b64(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64'); }\nreturn [{ json: { jobId, niche, topic: f.topic, angle: f.angle, trendB64: b64(trend) } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Job Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/write-trend.mts \"{{ $json.trendB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "Write trend.json",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'script-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000004",
+      "name": "Build: script-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000005",
+      "name": "job.json: script-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/script-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000006",
+      "name": "Run script-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'voiceover', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000007",
+      "name": "Build: voiceover",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000008",
+      "name": "job.json: voiceover",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/voiceover/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000009",
+      "name": "Run voiceover",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'caption-sync', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "Build: caption-sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "job.json: caption-sync",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/caption-sync/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000012",
+      "name": "Run caption-sync",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/media-sourcing/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000013",
+      "name": "Run media-sourcing",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "00000000-0000-0000-0000-000000000014",
+      "name": "Voice+captions and media ready",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'metadata-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000015",
+      "name": "Build: metadata-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000016",
+      "name": "job.json: metadata-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/metadata-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000017",
+      "name": "Run metadata-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'render', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000018",
+      "name": "Build: render",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000019",
+      "name": "job.json: render",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.RENDER_SERVER_URL || 'http://127.0.0.1:8080' }}/render",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RENDER_SERVER_SHARED_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobId: $('Job Context').first().json.jobId }) }}",
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000020",
+      "name": "Start render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 8
+      },
+      "id": "00000000-0000-0000-0000-000000000021",
+      "name": "Poll delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.RENDER_SERVER_URL || 'http://127.0.0.1:8080' }}/jobs/{{ $('Job Context').first().json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RENDER_SERVER_SHARED_SECRET }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000022",
+      "name": "Check render status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "running",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000023",
+      "name": "Still rendering?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000024",
+      "name": "Render failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'render-server reported: ' + ($json.error || $json.result?.error || 'unknown render failure') }}"
+      },
+      "id": "00000000-0000-0000-0000-000000000025",
+      "name": "Fail on render error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'thumbnail-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000026",
+      "name": "Build: thumbnail-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000027",
+      "name": "job.json: thumbnail-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/thumbnail-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000028",
+      "name": "Run thumbnail-generator",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'review', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000029",
+      "name": "Build: review (parked)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000000-0000-0000-0000-000000000030",
+      "name": "job.json: review (parked)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Job Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Context": {
+      "main": [
+        [
+          {
+            "node": "Write trend.json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: script-generator": {
+      "main": [
+        [
+          {
+            "node": "job.json: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write trend.json": {
+      "main": [
+        [
+          {
+            "node": "Build: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Run script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: voiceover": {
+      "main": [
+        [
+          {
+            "node": "job.json: voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run script-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: voiceover",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Run media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: voiceover": {
+      "main": [
+        [
+          {
+            "node": "Run voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "job.json: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run voiceover": {
+      "main": [
+        [
+          {
+            "node": "Build: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Run caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Voice+captions and media ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run media-sourcing": {
+      "main": [
+        null,
+        [
+          {
+            "node": "Voice+captions and media ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "job.json: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice+captions and media ready": {
+      "main": [
+        [
+          {
+            "node": "Build: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Run metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: render": {
+      "main": [
+        [
+          {
+            "node": "job.json: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: render": {
+      "main": [
+        [
+          {
+            "node": "Start render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start render": {
+      "main": [
+        [
+          {
+            "node": "Poll delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll delay": {
+      "main": [
+        [
+          {
+            "node": "Check render status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check render status": {
+      "main": [
+        [
+          {
+            "node": "Still rendering?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still rendering?": {
+      "main": [
+        [
+          {
+            "node": "Poll delay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Render failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render failed?": {
+      "main": [
+        [
+          {
+            "node": "Fail on render error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "job.json: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Run thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: review (parked)": {
+      "main": [
+        [
+          {
+            "node": "job.json: review (parked)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: review (parked)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

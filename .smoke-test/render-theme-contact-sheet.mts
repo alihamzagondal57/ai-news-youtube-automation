@@ -13,7 +13,7 @@ import { THEMES } from "../services/shared/src/theme/index.ts";
 const execFileAsync = promisify(execFile);
 const ffmpegPath = createRequire(import.meta.url)("ffmpeg-static") as string;
 
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 const OUT_DIR = join(REPO, "remotion", "out", "themes");
 const SHEET_PATH = join(REPO, "remotion", "out", "theme-contact-sheet.jpg");
 const WIDTH = 1280;

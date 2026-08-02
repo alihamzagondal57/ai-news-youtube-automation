@@ -16,11 +16,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --workspace=services/youtube-uploader
-      # TODO(remotion-pipeline-followup): implement services/youtube-uploader/src/index.ts
+      - run: npm ci
+      # Builds @ai-news/shared then the youtube-uploader service (composite project refs).
+      - run: npx tsc -b services/youtube-uploader
       - name: Upload video + metadata + thumbnail
         working-directory: services/youtube-uploader
-        run: npm run start -- --jobId "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}

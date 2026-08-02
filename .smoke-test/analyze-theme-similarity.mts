@@ -11,7 +11,7 @@ import { THEMES } from "../services/shared/src/theme/index.ts";
 
 const execFileAsync = promisify(execFile);
 const ffmpegPath = createRequire(import.meta.url)("ffmpeg-static") as string;
-const OUT_DIR = "C:\\Users\\HP\\New folder\\remotion\\out\\themes";
+const OUT_DIR = "E:\\Youtube Ai Automation Agent\\remotion\\out\\themes";
 const GRID_W = 16;
 const GRID_H = 9;
 

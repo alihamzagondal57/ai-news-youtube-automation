@@ -5,9 +5,17 @@ import { TICKER_HEIGHT } from "../../utils/layout";
 import { useScale } from "../../utils/scale";
 import { hexWithAlpha } from "./ThemedBackdrop";
 
+interface TickerStyleOverride {
+  backgroundColor?: string;
+  textColor?: string;
+  speedPxPerSecond?: number;
+}
+
 interface ThemedTickerProps {
   headlines: string[];
   theme: Theme;
+  /** Per-video override from the review dashboard (review-state.json.style.ticker). Unset fields keep the theme's own value. */
+  styleOverride?: TickerStyleOverride;
 }
 
 const SEPARATOR = "     •     ";
@@ -17,11 +25,21 @@ const SEPARATOR = "     •     ";
  * a solid full-bleed band, discrete floating chips, a thin accent ribbon, an
  * unboxed minimal line, or nothing at all.
  */
-export const ThemedTicker: React.FC<ThemedTickerProps> = ({ headlines, theme }) => {
+export const ThemedTicker: React.FC<ThemedTickerProps> = ({ headlines, theme, styleOverride }) => {
   const frame = useCurrentFrame();
   const { fps, width } = useVideoConfig();
   const scale = useScale();
-  const { ticker, palette, fonts } = theme;
+  // Layered on top of the theme, not instead of it — see ThemedCaptions.tsx's
+  // identical reasoning. textColor covers both textPrimary (band/ribbon) and
+  // textMuted (minimal variant), since the operator picking one colour means
+  // one colour regardless of which structural variant this theme happens to use.
+  const { ticker: themeTicker, palette: themePalette, fonts } = theme;
+  const palette = {
+    ...themePalette,
+    ...(styleOverride?.backgroundColor ? { surface: styleOverride.backgroundColor } : {}),
+    ...(styleOverride?.textColor ? { textPrimary: styleOverride.textColor, textMuted: styleOverride.textColor } : {}),
+  };
+  const ticker = { ...themeTicker, ...(styleOverride?.speedPxPerSecond ? { speed: styleOverride.speedPxPerSecond } : {}) };
 
   if (ticker.variant === "none" || headlines.length === 0) {
     return null;

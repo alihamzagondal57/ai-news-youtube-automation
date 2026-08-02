@@ -16,11 +16,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --workspace=services/media-sourcing
-      # TODO(remotion-pipeline-followup): implement services/media-sourcing/src/index.ts
+      - run: npm ci
+      # Builds @ai-news/shared then the media-sourcing service (composite project refs).
+      - run: npx tsc -b services/media-sourcing
       - name: Source stock footage, music and SFX
         working-directory: services/media-sourcing
-        run: npm run start -- --jobId "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}

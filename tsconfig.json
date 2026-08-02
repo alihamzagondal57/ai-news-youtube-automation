@@ -7,6 +7,9 @@
     { "path": "services/caption-sync" },
     { "path": "services/media-sourcing" },
     { "path": "services/metadata-generator" },
-    { "path": "infra/render-server" }
+    { "path": "services/thumbnail-generator" },
+    { "path": "services/youtube-uploader" },
+    { "path": "infra/render-server" },
+    { "path": "apps/review-dashboard/server" }
   ]
 }

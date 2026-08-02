@@ -6,11 +6,19 @@ import { useScale } from "../../utils/scale";
 import { hexWithAlpha } from "./ThemedBackdrop";
 import { contrastOn } from "./ThemedTicker";
 
+interface LowerThirdStyleOverride {
+  backgroundColor?: string;
+  textColor?: string;
+  accentColor?: string;
+}
+
 interface ThemedLowerThirdProps {
   text: string;
   theme: Theme;
   /** Small kicker above the headline, used by the stackedRule variant. */
   kicker?: string;
+  /** Per-video override from the review dashboard (review-state.json.style.lowerThird). Unset fields keep the theme's own value. */
+  styleOverride?: LowerThirdStyleOverride;
 }
 
 const VISIBLE_FRAMES = 130;
@@ -25,11 +33,18 @@ const EXIT_START = 100;
  * stack, and a hard offset block shadow. Entry direction and animation are also
  * theme-driven, so themes differ in motion as well as form.
  */
-export const ThemedLowerThird: React.FC<ThemedLowerThirdProps> = ({ text, theme, kicker }) => {
+export const ThemedLowerThird: React.FC<ThemedLowerThirdProps> = ({ text, theme, kicker, styleOverride }) => {
   const { fps } = useVideoConfig();
   const scale = useScale();
   const localFrame = useCurrentFrame();
-  const { lowerThird, palette, fonts } = theme;
+  const { lowerThird, fonts } = theme;
+  // Layered on top of the theme, not instead of it — see ThemedCaptions.tsx's identical reasoning.
+  const palette = {
+    ...theme.palette,
+    ...(styleOverride?.backgroundColor ? { surface: styleOverride.backgroundColor } : {}),
+    ...(styleOverride?.textColor ? { textPrimary: styleOverride.textColor } : {}),
+    ...(styleOverride?.accentColor ? { accent: styleOverride.accentColor } : {}),
+  };
 
   if (!text || localFrame >= VISIBLE_FRAMES) {
     return null;

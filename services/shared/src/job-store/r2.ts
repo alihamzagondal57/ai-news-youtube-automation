@@ -10,6 +10,7 @@ import {
   S3Client,
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { z } from "zod";
 
 export interface R2Config {
@@ -171,6 +172,18 @@ export class JobStore {
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
     } while (continuationToken);
     return keys;
+  }
+
+  /**
+   * A short-lived, direct URL to an object — for handing the review
+   * dashboard's browser client something it can point a `<video>`/`<audio>`
+   * tag or clip-swap thumbnail at without proxying the bytes through the
+   * dashboard's own server. Never cache this URL beyond its own expiry (the
+   * signature is time-bound); callers should request a fresh one per page
+   * load rather than persisting it.
+   */
+  async getPresignedUrl(key: string, expiresInSeconds: number): Promise<string> {
+    return getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: expiresInSeconds });
   }
 
   /** Downloads an R2 object to a local file, creating parent directories as needed. */

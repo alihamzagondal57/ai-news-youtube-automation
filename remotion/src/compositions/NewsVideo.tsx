@@ -33,6 +33,7 @@ export const NewsVideo: React.FC<NewsVideoProps> = ({
   branding,
   outroDurationInFrames,
   themeId,
+  style,
 }) => {
   const theme = getThemeOrDefault(themeId);
   const lastSegment = segments[segments.length - 1];
@@ -74,7 +75,7 @@ export const NewsVideo: React.FC<NewsVideoProps> = ({
           padding), independent of the background transition. */}
       {segments.map((segment) => (
         <Sequence key={`overlay-${segment.id}`} from={segment.startFrame} durationInFrames={segment.durationInFrames}>
-          <ThemedLowerThird text={segment.lowerThirdText} theme={theme} />
+          <ThemedLowerThird text={segment.lowerThirdText} theme={theme} styleOverride={style.lowerThird} />
           <BreakingNewsBumper accentColor={theme.palette.accent} enabled={segment.breaking} />
         </Sequence>
       ))}
@@ -82,11 +83,11 @@ export const NewsVideo: React.FC<NewsVideoProps> = ({
       {/* Word-synced captions run on the absolute video timeline, matching the
           Whisper output exactly. The theme changes only their presentation. */}
       <Sequence from={0} durationInFrames={contentEndFrame}>
-        <ThemedCaptions words={captionWords} theme={theme} />
+        <ThemedCaptions words={captionWords} theme={theme} styleOverride={style.captions} />
       </Sequence>
 
       {/* Ticker runs for the whole video, including over the outro. */}
-      <ThemedTicker headlines={tickerHeadlines} theme={theme} />
+      <ThemedTicker headlines={tickerHeadlines} theme={theme} styleOverride={style.ticker} />
 
       {/* Intro overlays the start of the first segment rather than displacing
           it, so audio/captions never shift. */}

@@ -16,8 +16,8 @@ jobs/{jobId}/
 │   ├── music.mp3
 │   └── sfx/*.mp3
 ├── metadata.json            # from metadata-generator (incl. containsSyntheticMedia disclosure flag)
-├── thumbnail.png             # from metadata-generator -- NOT YET IMPLEMENTED, see services/metadata-generator/README.md
 ├── render.mp4                # from remotion, via render-server
+├── thumbnail.png             # from thumbnail-generator (real render.mp4 frame, or a themed still if render.mp4 isn't there yet)
 ├── renders/                   # targeted-re-render cache: per-chunk video + the continuous audio track
 │   ├── segment-*.mp4          #   video-only chunks, one per segment
 │   ├── outro.mp4              #   video-only outro chunk
@@ -55,12 +55,13 @@ Rotation state is read-modify-write without a lock. The pipeline renders one vid
 3. **voiceover** → `voiceover.wav`, `segment-timing.json`
 4. **caption-sync** → `captions.json`
 5. **media-sourcing** → `media/`
-6. **metadata-generator** → `metadata.json`, `thumbnail.png`
+6. **metadata-generator** → `metadata.json`
 7. **render** (Remotion, on the GCP Compute Engine VM via render-server) → `render.mp4`
-8. **review** (human approval gate, review-dashboard) → `review-state.json` — pipeline parks here until `status: "approved"`
-9. **youtube-uploader** → `youtube-result.json`
+8. **thumbnail-generator** → `thumbnail.png` (a representative frame from `render.mp4`, composed with the job's own theme tokens and the opening segment's headline — see [`services/thumbnail-generator/README.md`](../services/thumbnail-generator/README.md))
+9. **review** (human approval gate, review-dashboard) → `review-state.json` — pipeline parks here until `status: "approved"`
+10. **youtube-uploader** → `youtube-result.json`
 
-The **review gate** (step 8) is where the pipeline stops for a human. The review dashboard reads `render.mp4` plus the upstream artifacts and lets the operator swap a clip, change the voice, or restyle the on-screen text, writing choices to `review-state.json`. n8n waits on `review-state.json.status` and only advances to `youtube-uploader` on `"approved"`. Full design: [`REVIEW-DASHBOARD.md`](REVIEW-DASHBOARD.md).
+The **review gate** (step 9) is where the pipeline stops for a human. The review dashboard reads `render.mp4` plus the upstream artifacts and lets the operator swap a clip, change the voice, or restyle the on-screen text, writing choices to `review-state.json`. On approve, the dashboard's `POST /approve` both flips `review-state.json.status` and (if `N8N_APPROVAL_WEBHOOK_URL` is configured) POSTs the new state to n8n's `release-on-approval` workflow, which resumes and triggers `youtube-uploader`. Full design: [`REVIEW-DASHBOARD.md`](REVIEW-DASHBOARD.md), [`../n8n/README.md`](../n8n/README.md).
 
 ### Targeted re-render
 A clip swap changes one segment, so re-encoding the whole 4K timeline is wasteful. `POST /render` accepts an optional `changedSegmentIds: number[]`; render-server then rebuilds only the affected chunks and reuses the rest from the per-segment cache in `jobs/{jobId}/renders/`.
@@ -78,6 +79,7 @@ Steps 2–6 depend only on `script.json` timing, not on each other's outputs, so
 
 Every step:
 - reads only from `jobs/{jobId}/`
-- validates its input against the Zod/pydantic schema in `services/shared/schemas`
-- updates `job.json`'s `status` and `currentStep` before exiting (success or failure)
+- validates its input against the Zod schema in `services/shared/schemas` (every service in this pipeline is Node/TypeScript — there is no Python/pydantic component)
 - is idempotent — re-running a step overwrites just that step's artifact, so a failed job can resume from the failed step instead of restarting from scratch
+
+**`job.json` is owned by n8n, not by the individual services.** Each service stays a stateless, independently-testable unit — it reads/writes only its own artifact and never touches `job.json`. The n8n workflow (`n8n/workflows/manual-mode.json`) creates the initial `job.json` when a job starts and advances `currentStep`/`status` itself after each step succeeds (or marks it `failed` via `shared-error-handling.json` if one doesn't) — this is what the review dashboard's job list (`currentStep === "review"`) and `youtube-uploader`'s own gate ultimately key off. See [`../n8n/README.md`](../n8n/README.md).

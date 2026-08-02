@@ -23,10 +23,12 @@ jobs:
         working-directory: services/voiceover
         run: npm run start -- "${{ inputs.jobId }}"
         env:
-          # Edge TTS (neural voice library) needs no key. ffmpeg is bundled via
-          # ffmpeg-static, so no system install is required. The Windows-only SAPI
-          # fallback is unavailable on ubuntu, so this runner relies on Edge being
-          # reachable — the default "auto" mode fails loudly if it is not.
+          # Kokoro-82M (self-hosted neural voice library, Apache-2.0) needs no key
+          # and runs cross-platform — ffmpeg is bundled via ffmpeg-static, so no
+          # system install is required either. The Windows-only SAPI fallback is
+          # unavailable on ubuntu, but "auto" only reaches it if a voice explicitly
+          # requests sapi (review-state.json.voiceId); the default/rotation pool is
+          # Kokoro-only, so this runner works unmodified for the real pipeline.
           VOICEOVER_ENGINE: auto
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

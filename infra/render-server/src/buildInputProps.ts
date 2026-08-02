@@ -1,3 +1,4 @@
+import type { RenderStyle, SegmentClipOverride } from "@ai-news/shared";
 import { DEFAULT_THEME_ID, getThemeOrDefault } from "@ai-news/shared/theme";
 import { config } from "./config.js";
 import type { JobAssets } from "./jobAssets.js";
@@ -57,6 +58,8 @@ export interface NewsVideoRenderProps {
    * uses to size each segment's media timeline (see buildSegmentMedia below).
    */
   transitionFrames: number;
+  /** Per-video text-styling override from review-state.json (docs/REVIEW-DASHBOARD.md). Always present, `{}` when unset — Remotion's own schema requires the key, defaulting per-field internally. */
+  style: RenderStyle;
 }
 
 const OUTRO_SECONDS = 5;
@@ -64,6 +67,10 @@ const OUTRO_SECONDS = 5;
 export interface BuildInputPropsOptions {
   /** Resolved upstream (review override or auto-rotation); falls back to the default theme. */
   themeId?: string;
+  /** Per-video style override from review-state.json; applied on top of the theme, not instead of it. */
+  style?: RenderStyle;
+  /** Per-segment clip swaps chosen in the review dashboard, from the segment's own alternatives. */
+  clipOverrides?: SegmentClipOverride[];
 }
 
 export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptions = {}): NewsVideoRenderProps {
@@ -74,6 +81,7 @@ export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptio
 
   const timingById = new Map(segmentTiming.segments.map((s) => [s.id, s]));
   const clipById = new Map(mediaManifest.clips.map((c) => [c.segmentId, c]));
+  const overrideById = new Map((options.clipOverrides ?? []).map((o) => [o.segmentId, o]));
 
   const segments = script.segments.map((segment, i) => {
     const timing = timingById.get(segment.id);
@@ -87,7 +95,7 @@ export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptio
     const isFirst = i === 0;
     const isLast = i === script.segments.length - 1;
     const media = clip
-      ? buildSegmentMedia(clip, { startFrame, durationInFrames, isFirst, isLast, transitionFrames, fps })
+      ? buildSegmentMedia(clip, overrideById.get(segment.id), { startFrame, durationInFrames, isFirst, isLast, transitionFrames, fps })
       : [];
 
     return {
@@ -118,7 +126,40 @@ export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptio
     branding: config.branding,
     themeId: theme.id,
     transitionFrames,
+    style: options.style ?? {},
   };
+}
+
+/**
+ * Resolves which clip actually plays as the segment's primary source, honouring
+ * a review-dashboard clip-swap override. The override must name a file already
+ * known to this segment (its current primary or one of its own alternatives —
+ * exactly what the dashboard's clip-swap UI offers, see docs/REVIEW-DASHBOARD.md);
+ * anything else is a stale/bad override and fails loudly rather than silently
+ * falling back to the wrong footage. The clip that loses the primary slot
+ * doesn't disappear — it rejoins the alternatives list, so it's still
+ * available as fallback footage if the swapped clip alone doesn't fill the
+ * segment (see mediaTimeline.ts).
+ */
+function resolveEffectiveClip(
+  clip: JobAssets["mediaManifest"]["clips"][number],
+  override: SegmentClipOverride | undefined,
+): { primary: TimelineClipSource; alternatives: TimelineClipSource[] } {
+  const allSources: TimelineClipSource[] = [
+    { file: clip.file, durationSeconds: clip.durationSeconds },
+    ...clip.alternatives.map((a) => ({ file: a.file, durationSeconds: a.durationSeconds })),
+  ];
+  if (!override) {
+    const [primary, ...alternatives] = allSources;
+    return { primary, alternatives };
+  }
+  const primary = allSources.find((s) => s.file === override.file);
+  if (!primary) {
+    throw new Error(
+      `review-state.json clip override for segment ${clip.segmentId} requests "${override.file}", which is neither this segment's current clip nor one of its known alternatives`,
+    );
+  }
+  return { primary, alternatives: allSources.filter((s) => s.file !== override.file) };
 }
 
 /**
@@ -133,6 +174,7 @@ export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptio
  */
 function buildSegmentMedia(
   clip: JobAssets["mediaManifest"]["clips"][number],
+  override: SegmentClipOverride | undefined,
   options: { startFrame: number; durationInFrames: number; isFirst: boolean; isLast: boolean; transitionFrames: number; fps: number },
 ): MediaClipProps[] {
   const { startFrame, durationInFrames, isFirst, isLast, transitionFrames, fps } = options;
@@ -142,8 +184,7 @@ function buildSegmentMedia(
   const localDurationFrames = overlapEndFrame - overlapStartFrame;
   const localDurationSeconds = localDurationFrames / fps;
 
-  const primary: TimelineClipSource = { file: clip.file, durationSeconds: clip.durationSeconds };
-  const alternatives: TimelineClipSource[] = clip.alternatives.map((a) => ({ file: a.file, durationSeconds: a.durationSeconds }));
+  const { primary, alternatives } = resolveEffectiveClip(clip, override);
 
   const secondsTimeline = buildSegmentMediaTimeline(localDurationSeconds, primary, alternatives);
   const frameTimeline = mediaTimelineToFrames(secondsTimeline, fps);

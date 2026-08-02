@@ -14,7 +14,7 @@ import { generateColorClip } from "./lib/media.mts";
 
 const execFileAsync = promisify(execFile);
 const ffmpegPath = createRequire(import.meta.url)("ffmpeg-static") as string;
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 
 function props(themeId: string): NewsVideoRenderProps {
   const theme = getTheme(themeId);

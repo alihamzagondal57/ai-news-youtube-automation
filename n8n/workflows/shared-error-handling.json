@@ -1,0 +1,147 @@
+{
+  "name": "Shared Error Handling",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "22222222-0000-0000-0000-000000000001",
+      "name": "On any workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const e = $input.first().json;\nconst jobId = e.workflow?.data?.resultData?.runData?.['Job Context']?.[0]?.data?.main?.[0]?.[0]?.json?.jobId\n  ?? e.execution?.data?.resultData?.runData?.['Job Context']?.[0]?.data?.main?.[0]?.[0]?.json?.jobId\n  ?? 'UNKNOWN';\nconst message = e.execution?.error?.message || e.trigger?.error?.message || 'Unknown error';\nconst payload = { jobId, mode: 'manual', status: 'failed', currentStep: null, niche: 'news-europe', error: String(message).slice(0, 500) };\nreturn [{ json: { jobId, message, updateJobB64: jobId === 'UNKNOWN' ? null : Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+      },
+      "id": "22222222-0000-0000-0000-000000000002",
+      "name": "Extract failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "22222222-0000-0000-0000-000000000003",
+      "name": "job.json: failed",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $env.N8N_ERROR_NOTIFY_WEBHOOK_URL }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "22222222-0000-0000-0000-000000000004",
+      "name": "Notification configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_ERROR_NOTIFY_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobId: $json.jobId, message: $json.message }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "22222222-0000-0000-0000-000000000005",
+      "name": "Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "On any workflow error": {
+      "main": [
+        [
+          {
+            "node": "Extract failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract failure": {
+      "main": [
+        [
+          {
+            "node": "job.json: failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: failed": {
+      "main": [
+        [
+          {
+            "node": "Notification configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification configured?": {
+      "main": [
+        [
+          {
+            "node": "Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

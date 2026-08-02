@@ -12,6 +12,7 @@ export const pipelineStepSchema = z.enum([
   "media-sourcing",
   "metadata-generator",
   "render",
+  "thumbnail-generator",
   // Human-in-the-loop approval gate between render and upload (see
   // docs/REVIEW-DASHBOARD.md). The pipeline parks here until review-state.json
   // reaches an "approved" status.
@@ -202,13 +203,22 @@ export const renderResultSchema = z.object({
 });
 export type RenderResult = z.infer<typeof renderResultSchema>;
 
-/** jobs/{jobId}/youtube-result.json */
+/**
+ * jobs/{jobId}/youtube-result.json
+ *
+ * videoId/url are nullable and error is present (mirroring renderResultSchema's
+ * shape) so a failed upload can still be written meaningfully — quotaUnitsUsed
+ * in particular matters on failure: partial progress (e.g. the video itself
+ * uploaded but setting the thumbnail failed) already spent real, non-refundable
+ * quota that the record needs to reflect.
+ */
 export const youtubeResultSchema = z.object({
   jobId: z.string().uuid(),
-  videoId: z.string(),
-  url: z.string().url(),
+  videoId: z.string().nullable(),
+  url: z.string().url().nullable(),
   status: z.enum(["uploaded", "failed"]),
   quotaUnitsUsed: z.number().nonnegative(),
+  error: z.string().nullable(),
 });
 export type YoutubeResult = z.infer<typeof youtubeResultSchema>;
 

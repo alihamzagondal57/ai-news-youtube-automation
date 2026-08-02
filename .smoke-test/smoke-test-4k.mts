@@ -18,7 +18,7 @@ import type { NewsVideoRenderProps } from "../infra/render-server/src/buildInput
 import { renderSegmented } from "../infra/render-server/src/renderSegmented.ts";
 import { comparePsnr, generateColorClip, probeVideo } from "./lib/media.mts";
 
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 const W = 3840;
 const H = 2160;
 const FPS = 30;

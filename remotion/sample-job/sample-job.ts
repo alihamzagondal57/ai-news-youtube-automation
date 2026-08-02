@@ -64,6 +64,7 @@ export const sampleJobProps: NewsVideoProps = {
     accentColor: "#e11d2e",
   },
   themeId: DEFAULT_THEME_ID,
+  style: {},
 };
 
 function buildSampleCaptionWords(): NewsVideoProps["captionWords"] {

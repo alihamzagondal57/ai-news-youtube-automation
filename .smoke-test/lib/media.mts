@@ -237,3 +237,40 @@ export async function frameAverageColor(
 export function colorDistance(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }): number {
   return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
 }
+
+/**
+ * Average colour of a rectangular region (crop, then scale to 1x1), rather
+ * than frameAverageColor's whole-frame average. Needed when a single overall
+ * average would blend two regions that are meant to differ — e.g. a
+ * composited still where the top is an untouched background frame and the
+ * bottom is a themed text plate; averaging the whole image would hide both.
+ * Works on a video frame or a single still image alike.
+ */
+export async function regionAverageColor(
+  path: string,
+  region: { x: number; y: number; width: number; height: number },
+  scratchDir: string,
+): Promise<{ r: number; g: number; b: number }> {
+  const rawPath = join(scratchDir, `region-${Math.random().toString(36).slice(2)}.raw`);
+  await run(ffmpegPath, [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    path,
+    "-vf",
+    `crop=${region.width}:${region.height}:${region.x}:${region.y},scale=1:1`,
+    "-vframes",
+    "1",
+    "-f",
+    "rawvideo",
+    "-pix_fmt",
+    "rgb24",
+    "-y",
+    rawPath,
+  ]);
+  const buf = await readFile(rawPath);
+  await rm(rawPath, { force: true });
+  if (buf.length < 3) throw new Error(`Could not read region from ${path}`);
+  return { r: buf[0], g: buf[1], b: buf[2] };
+}

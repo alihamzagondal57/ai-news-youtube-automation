@@ -13,7 +13,7 @@ import { renderStill, selectComposition } from "@remotion/renderer";
 
 const execFileAsync = promisify(execFile);
 const ffmpegPath = createRequire(import.meta.url)("ffmpeg-static") as string;
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 const THEME = "midnight-wire"; // "band" variant: full-width strip, easiest to measure
 
 async function stripVariance(png: string, scratch: string): Promise<number> {

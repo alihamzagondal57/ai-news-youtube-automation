@@ -16,13 +16,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --workspace=services/script-generator
-      # TODO(remotion-pipeline-followup): implement services/script-generator/src/index.ts
+      - run: npm ci
+      # Builds @ai-news/shared then the script-generator service (composite project refs).
+      - run: npx tsc -b services/script-generator
       - name: Generate script
         working-directory: services/script-generator
-        run: npm run start -- --jobId "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

@@ -1,0 +1,38 @@
+name: 07b - Generate Thumbnail
+
+on:
+  workflow_dispatch:
+    inputs:
+      jobId:
+        description: Pipeline job ID (UUID)
+        required: true
+
+jobs:
+  thumbnail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Builds @ai-news/shared then the thumbnail-generator service (composite
+      # project refs) — dist/ is gitignored, so a fresh checkout has nothing to
+      # run without this; `npm install --workspace=` alone does not build it.
+      - run: npx tsc -b services/thumbnail-generator
+      - name: Compose thumbnail from render.mp4 + theme
+        working-directory: services/thumbnail-generator
+        run: npm run start -- "${{ inputs.jobId }}"
+        env:
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'EuroWire News' }}
+          # Optional by design (docs/LICENSING.md §3.6) — the free Hugging Face
+          # credit, no payment method configured. Missing/exhausted falls back to
+          # a real render.mp4 frame, then the theme's own gradient; never fails
+          # the job.
+          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_API_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}

@@ -1,3 +1,7 @@
+# Claude Code local/ephemeral state (launch.json is the one shared dev-tool config)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -61,5 +65,9 @@ infra/**/*.tfstate
 infra/**/*.tfstate.backup
 infra/**/*.tfvars
 
-# n8n local runtime data (not the exported workflow JSON we track)
+# n8n local runtime data (not the exported workflow JSON we track) - the
+# local n8n install itself (node_modules, SQLite DB, encryption key, logs)
+# lives outside the workspace tree at .n8n-local/, kept out of git entirely
+# since it's a large, machine-local dev tool install, not a project artifact.
 n8n/.n8n/
+.n8n-local/

@@ -7,7 +7,8 @@ restriction obligations.
 
 **Audience:** a **solo creator** monetizing AI-generated news videos.
 
-> Last audited: 2026-07-24. Licenses and SaaS terms change — re-verify the two
+> Last audited: 2026-07-28 (FLUX.1 [schnell] + Hugging Face Inference
+> Providers added, §3.6). Licenses and SaaS terms change — re-verify the two
 > 🔴 blockers and any 🟡 item against the linked source before launch. This
 > document is an engineering audit, not legal advice.
 
@@ -24,7 +25,9 @@ restriction obligations.
 | 🟡 | **Pixabay / stock music** | **Use with rules** | Free in a larger work (not standalone). Can trigger YouTube **Content ID** claims — keep the license record to clear them. |
 | 🟡 | **Google Gemini free tier** | **Avoid in prod** | Free (unpaid) tier allows Google to use your data and is not positioned for production; currently disabled in our chain anyway. |
 | 🟡 | **Firecrawl** (trend research) | **OK, with care** | Paid SaaS, commercial use fine. Risk is the **source articles' copyright** — we must extract *facts*, never reproduce article text (already enforced by the script verbatim check). |
+| 🟡 | **Hugging Face Inference Providers** (FLUX.1 [schnell] thumbnail image) | **Cheap paid, not free at our volume** | No contractual "prototyping only" ban like GitHub Models — but the free credit ($0.10/month) covers only ~30 images with zero retry margin. Treat as a ~$0.10–1/month paid service, not a free one. |
 | 🟢 | **Kokoro-82M + kokoro-js** (primary TTS) | **Clear** | Apache-2.0 model trained on permissive audio; Apache-2.0 library. Generated audio is unrestricted for commercial use. |
+| 🟢 | **FLUX.1 [schnell]** (thumbnail background image model) | **Clear** | Unmodified Apache-2.0 license (verified against the actual LICENSE file, not a summary) — commercial use of the model and its generated images is unrestricted. |
 | 🟢 | **ffmpeg-static** (GPL-3.0 build) | **Clear for our use** | We *run* ffmpeg as a tool; its output is not a derivative work and we don't redistribute the binary. GPL obligations would only attach if we shipped the binary. |
 | 🟢 | **YouTube Data API v3** | **Clear, with disclosure** | Uploading our own content is permitted; synthetic-media disclosure is already set on every upload. |
 | 🟢 | All other libraries (SDKs, AWS S3, Whisper, sharp, React, etc.) | **Clear** | Permissive (MIT / Apache-2.0). Details in §4. |
@@ -252,6 +255,64 @@ a GPL program server-side is unrestricted.
 - If we ever want to avoid GPL entirely, swap to an **LGPL** ffmpeg build; not
   necessary today.
 
+### 3.6 🟡 FLUX.1 [schnell] + Hugging Face Inference Providers (thumbnail image)
+
+Two genuinely separate questions here, same lesson as GitHub Models (§3.2): a
+model's *weights license* and the *API service's* terms are independent, and
+both have to clear.
+
+**The model — clear.** Fetched the actual license file (not a summary):
+[`model_licenses/LICENSE-FLUX1-schnell`](https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-schnell)
+in Black Forest Labs' own repo is the **standard, unmodified Apache 2.0
+license** — no extra clauses layered on top (unlike FLUX.1-dev, which is a
+separate non-commercial license requiring a paid license for commercial use).
+Apache-2.0 grants unrestricted commercial use of the model and everything it
+generates, with no attribution requirement toward end viewers.
+
+**The API service — not a contractual blocker, but not free at our volume
+either.** Read Hugging Face's actual **Supplemental Terms for Inference
+Services** (effective 2025-04-28) directly as a PDF, plus their current
+pricing docs:
+
+- No clause restricts the Inference Providers service to
+  prototyping/evaluation — unlike GitHub Models, there is **no** "opt in to
+  paid usage once you're ready for production" ToS language here.
+- But "Inference API" as a flat free tier no longer really exists: requests
+  now route through third-party providers (fal, Replicate, Together, etc.)
+  who bill **per request**, and a free HF account gets **$0.10/month in
+  credits ("subject to change")**. At FLUX.1-schnell's typical per-image cost
+  via those providers (~$0.003/image), that's **~30 images/month with zero
+  margin for a bad generation needing a retry**.
+- Hugging Face's own docs frame exceeding the free credit as what "ensures
+  uninterrupted access to models for **production workloads**" — their own
+  mental model is free = trial, paid = production, not free = forbidden.
+
+**Verdict:** no compliance risk in using it, but calling it "free at
+production volume" would be inaccurate. It's realistically a **cheap paid
+service** (≈$0.003–0.01/image) that happens to start with a small trial
+credit — the same shape of decision as the LLM problem in §3.2, just at a much
+smaller absolute cost. Also checked fal.ai's own ToS directly (one of the
+providers HF can route to): customer retains ownership of generated outputs,
+commercial use is fine, no extra restriction beyond the model's own license.
+
+**Current implementation choice:** per explicit instruction, the free credit
+is used as-is with **no payment method configured** — `HUGGINGFACE_API_TOKEN`
+is optional, and thumbnail-generator falls back to its own real-frame/
+theme-gradient backdrop (unchanged from before this feature) whenever
+generation is unavailable — missing token, exhausted credit, rate limit, or
+any other failure. See `services/thumbnail-generator/README.md`. If volume
+ever grows past what the free credit covers, adding a payment method is a
+config change, not a code change — HF bills the same token automatically
+once the free credit runs out.
+
+Note also checked and ruled out: **self-hosting FLUX.1-schnell** (the
+Kokoro/Whisper playbook, §3.2 Path B) isn't practical here the way it is for
+TTS/captions — schnell is a 12B-parameter diffusion model, and the render VM
+is CPU-only; diffusion inference on CPU is minutes per image, not viable as a
+pipeline step. Together AI's often-cited "free FLUX.1-schnell" endpoint was
+also checked directly and found to be discontinued — their own model page now
+states *"This model is not available on Together's Serverless API."*
+
 ---
 
 ## 4. Full dependency inventory
@@ -272,9 +333,11 @@ a GPL program server-side is unrestricted.
 | `@aws-sdk/client-s3` | Apache-2.0 | ✅ | Talks to Cloudflare R2. |
 | `faster-whisper` + Whisper weights | MIT | ✅ | Transcribes our own audio. |
 | `sharp` | Apache-2.0 (libvips LGPL-3.0) | ✅ | Thumbnail compositing. |
+| `@huggingface/inference` | Apache-2.0 (JS SDK) | ✅ | Calls FLUX.1-schnell via Inference Providers — see §3.6. |
 | `express`, `pino`, `pino-pretty` | MIT | ✅ | Render server / logging. |
 | `zod`, `dotenv`, `ws`, `react`, `react-dom` | MIT | ✅ | Utilities / Remotion UI. |
-| `pydantic`, `boto3` | MIT / Apache-2.0 | ✅ | Python services. |
+| `@huggingface/transformers` | Apache-2.0 | ✅ | caption-sync's self-hosted Whisper (transformers.js) — no Python/pydantic component exists in this pipeline; every service is Node/TypeScript. |
+| `fastify`, `@fastify/cors` | MIT | ✅ | review-dashboard's API server. |
 | `s3rver` | MIT | ✅ (dev/test only) | In-process S3 for smoke tests; never in prod. |
 | `tsx`, `typescript`, `@types/*` | MIT / Apache-2.0 | ✅ | Build/dev tooling. |
 
@@ -290,6 +353,7 @@ a GPL program server-side is unrestricted.
 | **Firecrawl** | Trend research (scraping) | ✅ service; ⚠️ source copyright | §1 — extract facts, never reproduce article text. |
 | **Pexels API** | Stock footage/photos | ✅ with rules | §3.4. |
 | **Pixabay API** | Footage + music + SFX | ✅ with rules | §3.4; keep license records. |
+| **Hugging Face Inference Providers (FLUX.1 [schnell])** | Thumbnail background image | ✅ cheap paid, not free at volume | §3.6 — no ToS block, but budget for it as a paid service once the $0.10/month credit runs out. |
 | **YouTube Data API v3** | Upload | ✅ with disclosure | Own content; `containsSyntheticMedia` set on every upload (mandatory since 2025-05-21). |
 | **Cloudflare R2** | Storage | ✅ | Standard commercial cloud storage terms. |
 
@@ -332,3 +396,13 @@ a GPL program server-side is unrestricted.
   <https://github.com/rany2/edge-tts>
 - Kokoro-82M license/provenance: <https://huggingface.co/hexgrad/Kokoro-82M>
 - ffmpeg-static build (GPL): <https://github.com/eugeneware/ffmpeg-static>
+- FLUX.1 [schnell] license (verified against the actual file, not a summary):
+  <https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-schnell>,
+  <https://huggingface.co/black-forest-labs/FLUX.1-schnell>
+- Hugging Face Inference Services terms and pricing:
+  <https://cdn-media.huggingface.co/landing/assets/Supplemental+Terms+-+Inference+Services.pdf>,
+  <https://huggingface.co/docs/inference-providers/pricing>,
+  <https://huggingface.co/docs/inference-providers/en/index>
+- fal.ai terms of service (one of the providers HF can route to): <https://fal.ai/terms>
+- Together AI's FLUX.1-schnell no longer served (checked directly, contradicting
+  older secondhand claims): <https://www.together.ai/models/flux-1-schnell>

@@ -6,15 +6,13 @@ Generates everything YouTube needs to publish the video besides the file
 itself: **SEO title, description, tags, hashtags, chapters**, and the
 mandatory synthetic-content disclosure flag.
 
-> **Scope note:** thumbnail generation (`sharp` compositing from a keyframe +
-> template) is **not built in this pass** — it wasn't part of this service's
-> immediate scope, `assets/templates/` doesn't exist yet, and there's no
-> keyframe still available this early in the pipeline (metadata-generator runs
-> before `render`, per `docs/PIPELINE.md`'s step order, so it can't extract one
-> from `render.mp4`). `metadataSchema` has no `thumbnailPath` field either —
-> this was never fully speced into the data contract. `youtube-uploader` will
-> need a thumbnail source solved before it can run; noted here rather than
-> silently dropped.
+> **Scope note:** thumbnail generation lives in its own service,
+> [`services/thumbnail-generator`](../thumbnail-generator/README.md), not
+> here. It was originally scoped into this service, but metadata-generator
+> runs *before* `render` in `docs/PIPELINE.md`'s step order, so there's no
+> keyframe available yet to build a thumbnail from — thumbnail-generator runs
+> as its own step immediately *after* `render` instead, once `render.mp4`
+> actually exists.
 
 ## Title / description / tags / hashtags — LLM-generated
 

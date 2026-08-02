@@ -36,6 +36,45 @@ export const captionWordPropsSchema = z.object({
 });
 export type CaptionWordProps = z.infer<typeof captionWordPropsSchema>;
 
+/**
+ * Deliberately mirrors `renderStyleSchema` in services/shared/src/schemas/job.ts
+ * field-for-field rather than importing it: that module is zod 3 (Node side),
+ * this bundle is zod 4 (browser side) — same reasoning `MediaClipProps` above
+ * is redefined rather than shared. Every field optional/partial: an unset
+ * field falls back to the theme's own value, so an empty style object renders
+ * exactly as if no override existed at all.
+ */
+export const renderStyleSchema = z
+  .object({
+    captions: z
+      .object({
+        fontFamily: z.string(),
+        fontSizePx: z.number().positive(),
+        color: z.string(),
+        highlightColor: z.string(),
+      })
+      .partial()
+      .optional(),
+    ticker: z
+      .object({
+        backgroundColor: z.string(),
+        textColor: z.string(),
+        speedPxPerSecond: z.number().positive(),
+      })
+      .partial()
+      .optional(),
+    lowerThird: z
+      .object({
+        backgroundColor: z.string(),
+        textColor: z.string(),
+        accentColor: z.string(),
+      })
+      .partial()
+      .optional(),
+  })
+  .default({});
+export type RenderStyle = z.infer<typeof renderStyleSchema>;
+
 export const newsVideoPropsSchema = z.object({
   title: z.string(),
   resolution: z
@@ -62,5 +101,11 @@ export const newsVideoPropsSchema = z.object({
    * should not cost a 4K render that is otherwise fine.
    */
   themeId: z.string().default(DEFAULT_THEME_ID),
+  /**
+   * Per-video style override from the review dashboard (review-state.json.style
+   * — see docs/REVIEW-DASHBOARD.md). Layered ON TOP of the theme, not instead
+   * of it: any field left unset keeps the theme's own value.
+   */
+  style: renderStyleSchema,
 });
 export type NewsVideoProps = z.infer<typeof newsVideoPropsSchema>;

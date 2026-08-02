@@ -6,6 +6,7 @@ import { buildInputProps } from "./buildInputProps.js";
 import { config } from "./config.js";
 import { downloadReferencedMedia, readJobManifests } from "./jobAssets.js";
 import { AUDIO_CACHE_FILE, chunkPath, renderSegmented } from "./renderSegmented.js";
+import { resolveReviewOverrides } from "./reviewOverrides.js";
 import { buildChunkPlan } from "./segmentPlan.js";
 import { resolveJobTheme } from "./themeSelection.js";
 
@@ -39,8 +40,16 @@ export async function runRender(
     // it is sticky per job, so a targeted re-render can't silently re-skin the
     // video and invalidate the chunk cache it is about to reuse.
     const themeId = await resolveJobTheme(store, jobId, logger);
-    const inputProps = buildInputProps(assets, { themeId });
+    const { clipOverrides, style } = await resolveReviewOverrides(store, jobId);
+    const inputProps = buildInputProps(assets, { themeId, clipOverrides, style });
     const { changedSegmentIds } = options;
+
+    if (clipOverrides.length > 0 || Object.keys(style).length > 0) {
+      logger.info(
+        { jobId, clipOverrides: clipOverrides.map((o) => o.segmentId), styleKeys: Object.keys(style) },
+        "Applied review-dashboard clip/style overrides",
+      );
+    }
 
     // Only after inputProps exists do we know which clips it actually
     // references (a segment whose stock clip already covers it never touches

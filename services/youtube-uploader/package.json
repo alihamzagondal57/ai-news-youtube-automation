@@ -1,0 +1,23 @@
+{
+  "name": "@ai-news/youtube-uploader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "youtube:oauth-setup": "tsx scripts/youtube-oauth-setup.ts"
+  },
+  "dependencies": {
+    "@ai-news/shared": "*",
+    "dotenv": "^16.4.5",
+    "googleapis": "^173.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.13",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4"
+  }
+}

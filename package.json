@@ -11,9 +11,12 @@
     "services/caption-sync",
     "services/media-sourcing",
     "services/metadata-generator",
+    "services/thumbnail-generator",
     "services/youtube-uploader",
     "services/shared",
-    "infra/render-server"
+    "infra/render-server",
+    "apps/review-dashboard/server",
+    "apps/review-dashboard/frontend"
   ],
   "scripts": {
     "lint": "eslint . --ext .ts,.tsx",

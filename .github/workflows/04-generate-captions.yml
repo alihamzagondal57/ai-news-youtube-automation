@@ -12,16 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - run: pip install -r services/caption-sync/requirements.txt
-      # TODO(remotion-pipeline-followup): implement services/caption-sync/src/main.py (faster-whisper)
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Builds @ai-news/shared then the caption-sync service (composite project refs).
+      - run: npx tsc -b services/caption-sync
       - name: Generate word-synced captions
         working-directory: services/caption-sync
-        run: python -m src.main --job-id "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
-          WHISPER_MODEL: ${{ vars.WHISPER_MODEL || 'medium' }}
+          # Self-hosted Whisper via transformers.js (@huggingface/transformers) —
+          # NOT Python/faster-whisper, that was the original spec but never built;
+          # this is the actual implementation (services/caption-sync/src/whisper.ts).
+          # No API key: model weights download from the public Hugging Face Hub on
+          # first run and are cached under the runner's HF cache dir.
+          WHISPER_MODEL: ${{ vars.WHISPER_MODEL || 'Xenova/whisper-base.en' }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

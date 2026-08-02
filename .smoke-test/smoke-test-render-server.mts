@@ -22,7 +22,7 @@ function assert(condition: boolean, description: string): void {
   console.log(`  ok  ${description}`);
 }
 
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 const S3_PORT = 4569;
 const BUCKET = "ai-news-pipeline";
 const JOB_ID = "11111111-1111-1111-1111-111111111111";

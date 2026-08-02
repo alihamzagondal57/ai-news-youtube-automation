@@ -19,7 +19,7 @@ import { buildChunkPlan, computeDirtyRanges } from "../infra/render-server/src/s
 import { getTheme } from "../services/shared/src/theme/index.ts";
 import { comparePsnr, comparePsnrRange, generateColorClip, perFramePsnr, probeVideo } from "./lib/media.mts";
 
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 const FPS = 30;
 const WIDTH = 640;
 const HEIGHT = 360;

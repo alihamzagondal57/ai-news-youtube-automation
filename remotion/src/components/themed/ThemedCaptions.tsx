@@ -7,12 +7,22 @@ import { useScale } from "../../utils/scale";
 import { hexWithAlpha } from "./ThemedBackdrop";
 import { contrastOn } from "./ThemedTicker";
 
+interface CaptionsStyleOverride {
+  fontFamily?: string;
+  fontSizePx?: number;
+  color?: string;
+  highlightColor?: string;
+}
+
 interface ThemedCaptionsProps {
   words: CaptionWordProps[];
   theme: Theme;
+  /** Per-video override from the review dashboard (review-state.json.style.captions). Unset fields keep the theme's own value. */
+  styleOverride?: CaptionsStyleOverride;
 }
 
 const WORDS_PER_LINE = 6;
+const BASE_FONT_SIZE = 52;
 
 /**
  * Word-synced captions in a fixed band above the ticker (see utils/layout.ts),
@@ -23,12 +33,20 @@ const WORDS_PER_LINE = 6;
  * of them — only the presentation changes, so caption/voice sync is unaffected
  * by the theme.
  */
-export const ThemedCaptions: React.FC<ThemedCaptionsProps> = ({ words, theme }) => {
+export const ThemedCaptions: React.FC<ThemedCaptionsProps> = ({ words, theme, styleOverride }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const scale = useScale();
-  const { captions, palette, fonts } = theme;
+  const { captions } = theme;
   const t = frame / fps;
+
+  // A style override layers on top of the theme rather than replacing it: an
+  // "effective" theme with just the overridden palette/font fields swapped in
+  // means every existing per-variant render branch below needs no changes at
+  // all — they already read colour/font off `theme`.
+  const palette = { ...theme.palette, ...(styleOverride?.color ? { textPrimary: styleOverride.color } : {}), ...(styleOverride?.highlightColor ? { captionActive: styleOverride.highlightColor } : {}) };
+  const fonts = { ...theme.fonts, ...(styleOverride?.fontFamily ? { caption: styleOverride.fontFamily } : {}) };
+  const effectiveTheme: Theme = { ...theme, palette, fonts };
 
   const activeIndex = words.findIndex((w) => t >= w.start && t < w.end);
   if (activeIndex === -1) {
@@ -37,7 +55,7 @@ export const ThemedCaptions: React.FC<ThemedCaptionsProps> = ({ words, theme }) 
 
   const lineStart = Math.floor(activeIndex / WORDS_PER_LINE) * WORDS_PER_LINE;
   const line = words.slice(lineStart, lineStart + WORDS_PER_LINE);
-  const fontSize = 52 * scale * captions.sizeScale;
+  const fontSize = (styleOverride?.fontSizePx ?? BASE_FONT_SIZE * captions.sizeScale) * scale;
 
   const lineStyle: React.CSSProperties = {
     display: "flex",
@@ -89,7 +107,7 @@ export const ThemedCaptions: React.FC<ThemedCaptionsProps> = ({ words, theme }) 
           return (
             <span
               key={`${lineStart + i}-${word.word}`}
-              style={wordStyle(isActive, captions.variant, theme, scale)}
+              style={wordStyle(isActive, captions.variant, effectiveTheme, scale)}
             >
               {word.word}
             </span>

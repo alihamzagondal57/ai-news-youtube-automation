@@ -65,9 +65,11 @@ render  ──▶  review (parked)  ──▶  youtube-uploader
    `render.mp4`, and any existing `review-state.json`.
 3. The operator reviews and edits (below). Edits write `review-state.json` and may
    enqueue a targeted re-gen; the preview updates when the re-render lands.
-4. On **Approve**, the dashboard sets `review-state.json.status = "approved"`.
-   n8n is waiting on that (webhook resume or poll) and releases the job to
-   `youtube-uploader`.
+4. On **Approve**, the dashboard sets `review-state.json.status = "approved"`
+   and, if `N8N_APPROVAL_WEBHOOK_URL` is configured, POSTs the new state to
+   n8n's `release-on-approval` workflow, which resumes and releases the job
+   to `youtube-uploader` (`n8n/README.md`). `youtube-uploader` also enforces
+   this gate itself regardless of how — or whether — it gets triggered.
 
 `review-state.json` is the typed contract for all of this
 (`reviewStateSchema` in `services/shared`). It carries the review status, the
@@ -93,12 +95,14 @@ existing `render.mp4` (per-segment intermediate renders are cached under
 See "Targeted re-render" in [`docs/PIPELINE.md`](PIPELINE.md).
 
 ### 3. Voice library
-A curated set of Edge-TTS voices (multiple male/female voices and accents — e.g.
-`en-GB`, `en-US`, `en-IE`). The operator previews a short sample and selects a
-voice per-video, or sets a default via a saved preset. Because changing the voice
-changes the narration audio and therefore **all** segment timings, a voice change
-re-runs `voiceover` → `caption-sync` → a **full** re-render (not a targeted one).
-The selected voice is stored as `review-state.json.voiceId`.
+A curated set of Kokoro-82M neural voices plus two offline SAPI fallbacks
+(`services/voiceover/src/voices.ts`'s `VOICE_LIBRARY` — Edge-TTS was removed
+for licensing reasons, see `docs/LICENSING.md` §3.3). The operator previews a
+short sample and selects a voice per-video, or sets a default via a saved
+preset. Because changing the voice changes the narration audio and therefore
+**all** segment timings, a voice change re-runs `voiceover` → `caption-sync` →
+a **full** re-render (not a targeted one). The selected voice is stored as
+`review-state.json.voiceId`.
 
 ### 4. Theme override
 Each video is auto-assigned one of 18 visual themes, avoiding recent picks so
@@ -133,13 +137,40 @@ needs just a re-render — no upstream re-gen.
 - **render-server**: targeted re-render is **implemented** — `changedSegmentIds`
   on the render request, a per-segment chunk cache in `jobs/{jobId}/renders/`,
   and an ffmpeg stitch step (see "Targeted re-render" in
-  [`docs/PIPELINE.md`](PIPELINE.md)). Still to do: reading `review-state.json` to
-  apply `voiceId`/`style`/`clipOverrides` instead of taking them as call args.
+  [`docs/PIPELINE.md`](PIPELINE.md)). **[DONE]** `reviewOverrides.ts` now reads
+  `review-state.json`'s `clipOverrides`/`style` and `buildInputProps.ts` applies
+  both — a clip swap genuinely replaces the segment's primary source (the
+  displaced clip rejoins the alternatives pool as fallback footage), and a
+  style override reaches the actual rendered pixels. `voiceId` is intentionally
+  **not** read here — voice resolution happens upstream in `voiceover` itself
+  (a voice change reshapes every segment's timing, so it needs a full re-run
+  of `voiceover` → `caption-sync` → render, not something render-server alone
+  can apply).
 - **The Remotion composition** must accept the style props from `renderStyleSchema`
-  and fall back to channel defaults.
-- **media-sourcing** gains an "alternatives" mode returning N candidates for a
-  single `visualCue` instead of committing one.
-- **n8n** gains the park-and-wait-for-approval gate between render and upload.
+  and fall back to channel defaults. **[DONE]** — `newsVideoPropsSchema.style`
+  (a local zod-4 mirror, same reasoning as `MediaClipProps`), threaded through
+  `NewsVideo.tsx` into `ThemedCaptions`/`ThemedTicker`/`ThemedLowerThird`, each
+  merging the override into an effective theme so every existing per-variant
+  render branch needed no changes. Proven against real rendered pixels, not
+  just prop plumbing — see `.smoke-test/test-render-overrides.mts`.
+- **media-sourcing**: the original plan was a live "alternatives" mode queried
+  on demand from the dashboard. **[DONE, differently — simpler]** media-sourcing
+  already downloads 3-4 ranked alternatives per segment up front, alongside the
+  primary clip (`mediaAssetSchema.alternatives`, stored under
+  `jobs/{jobId}/media/`) — so clip-swap has no live query to make at all; it
+  just presigns URLs to files already sitting in R2.
+- **n8n**: **[DONE]** `n8n/workflows/manual-mode.json` parks at `review` after
+  thumbnail-generator; `release-on-approval.json` resumes on the dashboard's
+  webhook and releases the job to `youtube-uploader`. Both are real,
+  imported-and-run-against-real-services workflows — see `n8n/README.md`'s
+  "What's been verified" section for exactly what was exercised. Belt and
+  suspenders either way: `youtube-uploader` itself independently refuses to
+  run unless `review-state.json.status === "approved"`
+  (`services/youtube-uploader/src/index.ts`), so the gate holds even if n8n's
+  webhook never fires.
 
-These are captured here so the services can be built to this contract; the
-dashboard itself comes after the render pipeline in the build order.
+**[DONE]** The dashboard itself: `apps/review-dashboard/server` (Fastify — job
+listing/detail with presigned URLs, theme/voice catalogs, review-state
+read/patch/approve/reject) and `apps/review-dashboard/frontend` (installable
+PWA — scene-by-scene review, clip swap, voice preview/selection, theme/style
+override, approve/reject). See `apps/review-dashboard/README.md`.

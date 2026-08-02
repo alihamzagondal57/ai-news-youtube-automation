@@ -40,7 +40,7 @@ process.env.R2_BUCKET_NAME = BUCKET;
 process.env.R2_ENDPOINT = `http://localhost:${S3_PORT}`;
 process.env.R2_FORCE_PATH_STYLE = "true";
 
-const REPO = "C:\\Users\\HP\\New folder";
+const REPO = "E:\\Youtube Ai Automation Agent";
 
 let failures = 0;
 function check(label: string, condition: boolean, detail: string): void {
