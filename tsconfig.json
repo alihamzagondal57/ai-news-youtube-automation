@@ -10,6 +10,7 @@
     { "path": "services/thumbnail-generator" },
     { "path": "services/youtube-uploader" },
     { "path": "infra/render-server" },
-    { "path": "apps/review-dashboard/server" }
+    { "path": "apps/review-dashboard/server" },
+    { "path": "services/trend-research" }
   ]
 }

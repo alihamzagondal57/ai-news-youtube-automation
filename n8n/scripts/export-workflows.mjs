@@ -5,7 +5,8 @@
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildWorkflow } from "./_build-manual-mode.mjs";
+import { buildWorkflow as buildManualMode } from "./_build-manual-mode.mjs";
+import { buildWorkflow as buildAutoMode } from "./_build-auto-mode.mjs";
 import { buildReleaseOnApproval, buildSharedErrorHandling } from "./_build-release-and-errors.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -18,7 +19,8 @@ function stripRuntimeFields(wf) {
 
 async function main() {
   const files = {
-    "manual-mode.json": buildWorkflow(),
+    "manual-mode.json": buildManualMode(),
+    "auto-mode.json": buildAutoMode(),
     "release-on-approval.json": buildReleaseOnApproval(),
     "shared-error-handling.json": buildSharedErrorHandling(),
   };

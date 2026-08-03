@@ -31,7 +31,7 @@ Produces a refresh token; put it in `YOUTUBE_REFRESH_TOKEN` (locally in `.env`, 
 See [`infra/gcp/README.md`](../infra/gcp/README.md). Requires a GCP project with the Compute Engine API enabled and (once approved) the Google for Startups credit applied — this step provisions real, billable infrastructure, so review `terraform plan` before applying.
 
 ## 5. Import n8n workflows
-Import `n8n/workflows/manual-mode.json`, `release-on-approval.json`, and `shared-error-handling.json` into your n8n instance (`auto-mode.json` doesn't exist yet — it needs `trend-research`, which isn't built). Set `RENDER_SERVER_SHARED_SECRET`, `RENDER_SERVER_URL`, and (optionally) `N8N_ERROR_NOTIFY_WEBHOOK_URL` in n8n's own process env — see `n8n/README.md` for what each workflow does and exactly what's been verified against the real services. Point the review dashboard's `N8N_APPROVAL_WEBHOOK_URL` at this n8n instance's `release-on-approval` webhook URL.
+Import all four of `n8n/workflows/manual-mode.json`, `auto-mode.json`, `release-on-approval.json`, and `shared-error-handling.json` into your n8n instance. Set `RENDER_SERVER_SHARED_SECRET`, `RENDER_SERVER_URL`, `FIRECRAWL_API_KEY` (for `auto-mode.json`'s trend-research step), and (optionally) `N8N_ERROR_NOTIFY_WEBHOOK_URL` in n8n's own process env — see `n8n/README.md` for what each workflow does and exactly what's been verified against the real services. Point the review dashboard's `N8N_APPROVAL_WEBHOOK_URL` at this n8n instance's `release-on-approval` webhook URL.
 
 ## 6. GitHub repo secrets
 Set every key from `.env.example` as a GitHub Actions secret (Settings → Secrets and variables → Actions) — the pipeline workflows in `.github/workflows/` read them from there.

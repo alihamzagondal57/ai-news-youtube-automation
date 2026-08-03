@@ -331,8 +331,8 @@ states *"This model is not available on Together's Serverless API."*
 | `openai` | Apache-2.0 | ✅ | OpenAI-compatible providers. |
 | `@google/genai` | Apache-2.0 | ✅ | Gemini adapter (service terms differ — §5). |
 | `@aws-sdk/client-s3` | Apache-2.0 | ✅ | Talks to Cloudflare R2. |
-| `faster-whisper` + Whisper weights | MIT | ✅ | Transcribes our own audio. |
 | `sharp` | Apache-2.0 (libvips LGPL-3.0) | ✅ | Thumbnail compositing. |
+| `firecrawl` | MIT | ✅ | trend-research's search+scrape SDK — see §1 above: extract facts into `sourceSummaries`, never reproduce article text. |
 | `@huggingface/inference` | Apache-2.0 (JS SDK) | ✅ | Calls FLUX.1-schnell via Inference Providers — see §3.6. |
 | `express`, `pino`, `pino-pretty` | MIT | ✅ | Render server / logging. |
 | `zod`, `dotenv`, `ws`, `react`, `react-dom` | MIT | ✅ | Utilities / Remotion UI. |

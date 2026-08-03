@@ -16,14 +16,25 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --workspace=services/trend-research
-      # TODO(remotion-pipeline-followup): implement services/trend-research/src/index.ts,
-      # then call it here with jobId and the R2/Firecrawl secrets below.
+      - run: npm ci
+      # Builds @ai-news/shared then the trend-research service (composite project refs).
+      - run: npx tsc -b services/trend-research
       - name: Run trend research
         working-directory: services/trend-research
-        run: npm run start -- --jobId "${{ inputs.jobId }}"
+        run: npm run start -- "${{ inputs.jobId }}"
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          # Reuses script-generator's ENTIRE provider chain for the ranking
+          # call, not a trend-research-specific one (see
+          # services/trend-research/src/index.ts) — same full env set as
+          # 02-generate-script.yml, not just one provider.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

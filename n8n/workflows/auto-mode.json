@@ -1,60 +1,32 @@
 {
-  "name": "Manual Mode - Full Pipeline",
+  "name": "Auto Mode - Full Pipeline",
   "nodes": [
     {
       "parameters": {
-        "formTitle": "Start a Manual-Mode Video",
-        "formDescription": "Supplies the topic directly - trend-research is skipped in manual mode.",
-        "formFields": {
-          "values": [
+        "rule": {
+          "interval": [
             {
-              "fieldLabel": "Niche",
-              "fieldName": "niche",
-              "fieldType": "text",
-              "placeholder": "news-europe",
-              "requiredField": false
-            },
-            {
-              "fieldLabel": "Topic",
-              "fieldName": "topic",
-              "fieldType": "text",
-              "requiredField": true
-            },
-            {
-              "fieldLabel": "Angle",
-              "fieldName": "angle",
-              "fieldType": "text",
-              "requiredField": true
-            },
-            {
-              "fieldLabel": "Source URLs (one per line)",
-              "fieldName": "sourceUrls",
-              "fieldType": "textarea",
-              "requiredField": true
-            },
-            {
-              "fieldLabel": "Source Summaries (one per line)",
-              "fieldName": "sourceSummaries",
-              "fieldType": "textarea",
-              "requiredField": true
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
             }
           ]
         }
       },
       "id": "00000001-0000-0000-0000-000000000001",
-      "name": "On form submission",
-      "type": "n8n-nodes-base.formTrigger",
-      "typeVersion": 2.2,
+      "name": "Daily schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
       "position": [
         0,
         0
-      ],
-      "webhookId": "manual-mode-start"
+      ]
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "function uuidv4() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\nconst f = $input.first().json;\nconst jobId = uuidv4();\nconst niche = (f.niche || 'news-europe').trim();\nconst sourceUrls = String(f.sourceUrls || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst sourceSummaries = String(f.sourceSummaries || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst trend = { jobId, topic: f.topic, angle: f.angle, sourceUrls, sourceSummaries };\nfunction b64(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64'); }\nreturn [{ json: { jobId, niche, topic: f.topic, angle: f.angle, trendB64: b64(trend) } }];"
+        "jsCode": "function uuidv4() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\nconst jobId = uuidv4();\nconst niche = ($env.TREND_NICHE || 'news-europe').trim();\nreturn [{ json: { jobId, niche } }];"
       },
       "id": "00000001-0000-0000-0000-000000000002",
       "name": "Job Context",
@@ -67,12 +39,13 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/write-trend.mts \"{{ $json.trendB64 }}\""
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'trend-research', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000001-0000-0000-0000-000000000003",
-      "name": "Write trend.json",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
+      "name": "Build: trend-research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
         0
@@ -80,8 +53,34 @@
     },
     {
       "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
+      },
+      "id": "00000001-0000-0000-0000-000000000004",
+      "name": "job.json: trend-research",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/trend-research/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+      },
+      "id": "00000001-0000-0000-0000-000000000005",
+      "name": "Run trend-research",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'script-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'script-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000001",
       "name": "Build: script-generator",
@@ -121,7 +120,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'voiceover', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'voiceover', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000004",
       "name": "Build: voiceover",
@@ -161,7 +160,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'caption-sync', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'caption-sync', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000007",
       "name": "Build: caption-sync",
@@ -227,7 +226,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'metadata-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'metadata-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000012",
       "name": "Build: metadata-generator",
@@ -267,7 +266,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'render', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'render', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000015",
       "name": "Build: render",
@@ -433,7 +432,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'thumbnail-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'thumbnail-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000023",
       "name": "Build: thumbnail-generator",
@@ -473,7 +472,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'review', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'auto', status: 'running', currentStep: 'review', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
       "id": "00000002-0000-0000-0000-000000000026",
       "name": "Build: review (parked)",
@@ -499,7 +498,7 @@
     }
   ],
   "connections": {
-    "On form submission": {
+    "Daily schedule": {
       "main": [
         [
           {
@@ -514,7 +513,29 @@
       "main": [
         [
           {
-            "node": "Write trend.json",
+            "node": "Build: trend-research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build: trend-research": {
+      "main": [
+        [
+          {
+            "node": "job.json: trend-research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job.json: trend-research": {
+      "main": [
+        [
+          {
+            "node": "Run trend-research",
             "type": "main",
             "index": 0
           }
@@ -532,7 +553,7 @@
         ]
       ]
     },
-    "Write trend.json": {
+    "Run trend-research": {
       "main": [
         [
           {
