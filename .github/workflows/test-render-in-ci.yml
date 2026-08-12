@@ -1,22 +1,19 @@
 name: TEST - Render inside GitHub Actions (no VM)
 
 # Diagnostic workflow, not part of the regular per-step pipeline (see
-# 07-trigger-render.yml for the production GCE-VM path). Runs the full
-# content pipeline (manual topic -> script -> voiceover -> captions -> media)
-# plus the render step entirely inside one job, storage backed by the
-# runner's own SSD via an in-process S3-compatible mock (no R2/network storage
-# needed for this test) — the same pattern .smoke-test/*.mts already uses
-# locally. Exists to answer one question: does a standard GitHub-hosted
-# runner (2 vCPU / 7GB RAM, SSD-backed) avoid the disk-I/O render bottleneck
-# measured on local HDD hardware, well enough to skip a paid render VM for now.
+# 07-trigger-render.yml for the production GCE-VM path). Isolated render-only
+# test — same synthetic-clip pattern as .smoke-test/smoke-test-1080p.mts (real
+# Remotion + ffmpeg, no LLM/TTS/Whisper/media-API dependency) — to answer one
+# question fast: does a standard GitHub-hosted runner (2 vCPU / 7GB RAM,
+# SSD-backed) avoid the disk-I/O render bottleneck measured on local HDD
+# hardware, well enough to skip a paid render VM for now.
 on:
   workflow_dispatch:
 
 jobs:
   render-test:
     runs-on: ubuntu-latest
-    # Comfortable margin under the platform's 6-hour hard per-job limit.
-    timeout-minutes: 330
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,19 +21,16 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Run pipeline + render, timed
-        run: npx tsx .github/scripts/test-render-in-ci.mts
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          # Explicit, independent of any local .env override — this is what
-          # caused the earlier local RAM stall (medium instead of base.en).
-          WHISPER_MODEL: Xenova/whisper-base.en
+      # Builds every workspace package (composite project refs, see root
+      # tsconfig.json) — without this, @ai-news/shared's dist/ doesn't exist
+      # on a fresh checkout and every import of it fails immediately.
+      - run: npx tsc -b
+      - name: Run isolated render-only test
+        run: npx tsx .github/scripts/render-only-test.mts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: render-test-output
+          name: render-only-output
           path: |
             /tmp/ci-render-test/render.mp4
             /tmp/ci-render-test/timings.json
