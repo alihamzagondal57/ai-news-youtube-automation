@@ -25,6 +25,10 @@ jobs:
       # tsconfig.json) — without this, @ai-news/shared's dist/ doesn't exist
       # on a fresh checkout and every import of it fails immediately.
       - run: npx tsc -b
+      # Sample voiceover/music WAVs are gitignored (regenerated locally via
+      # remotion/sample-job/generate-fixture-audio.mjs) — a fresh checkout has
+      # neither, so this test needs them created explicitly.
+      - run: npm run fixture --workspace=remotion
       - name: Run isolated render-only test
         run: npx tsx .github/scripts/render-only-test.mts
       - uses: actions/upload-artifact@v4
