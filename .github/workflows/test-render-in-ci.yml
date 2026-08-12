@@ -1,19 +1,33 @@
 name: TEST - Render inside GitHub Actions (no VM)
 
 # Diagnostic workflow, not part of the regular per-step pipeline (see
-# 07-trigger-render.yml for the production GCE-VM path). Isolated render-only
-# test — same synthetic-clip pattern as .smoke-test/smoke-test-1080p.mts (real
-# Remotion + ffmpeg, no LLM/TTS/Whisper/media-API dependency) — to answer one
-# question fast: does a standard GitHub-hosted runner (2 vCPU / 7GB RAM,
-# SSD-backed) avoid the disk-I/O render bottleneck measured on local HDD
-# hardware, well enough to skip a paid render VM for now.
+# 07-trigger-render.yml for the production GCE-VM path). Two modes:
+#
+#   render-only   Isolated render step only — same synthetic-clip pattern as
+#                 .smoke-test/smoke-test-1080p.mts (real Remotion + ffmpeg, no
+#                 LLM/TTS/Whisper/media-API dependency). Fast (~2-4 min):
+#                 answers just "does the runner's SSD avoid the local-HDD
+#                 render bottleneck."
+#   full-pipeline Manual topic input -> real Groq script -> real Kokoro
+#                 voiceover -> real Whisper captions -> real Pexels/Pixabay
+#                 media -> render, entirely inside one job. Slower (~1-3
+#                 hours, mostly the render step): answers "does the whole
+#                 pipeline work end-to-end in CI."
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Which test to run
+        type: choice
+        options: [render-only, full-pipeline]
+        default: render-only
 
 jobs:
   render-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # full-pipeline needs real headroom for Groq/Kokoro/Whisper/media-sourcing
+    # plus the render step; render-only finishes in minutes regardless.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,16 +39,26 @@ jobs:
       # tsconfig.json) — without this, @ai-news/shared's dist/ doesn't exist
       # on a fresh checkout and every import of it fails immediately.
       - run: npx tsc -b
-      # Sample voiceover/music WAVs are gitignored (regenerated locally via
-      # remotion/sample-job/generate-fixture-audio.mjs) — a fresh checkout has
-      # neither, so this test needs them created explicitly.
-      - run: npm run fixture --workspace=remotion
-      - name: Run isolated render-only test
+      # render-only's synthetic clips need sample voiceover/music WAVs, which
+      # are gitignored (regenerated locally via
+      # remotion/sample-job/generate-fixture-audio.mjs) — full-pipeline
+      # doesn't need this, its voiceover.wav comes from the real Kokoro step.
+      - if: inputs.mode == 'render-only'
+        run: npm run fixture --workspace=remotion
+      - if: inputs.mode == 'render-only'
+        name: Run isolated render-only test
         run: npx tsx .github/scripts/render-only-test.mts
+      - if: inputs.mode == 'full-pipeline'
+        name: Run full pipeline + render, timed
+        run: npx tsx .github/scripts/test-render-in-ci.mts
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: render-only-output
+          name: render-test-output
           path: |
             /tmp/ci-render-test/render.mp4
             /tmp/ci-render-test/timings.json
