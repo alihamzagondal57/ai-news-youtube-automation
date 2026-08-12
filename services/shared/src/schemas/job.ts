@@ -64,6 +64,15 @@ export const scriptSegmentSchema = z.object({
    * scripts predating the requirement still validate.
    */
   insight: z.string().optional(),
+  /**
+   * Lightweight mechanical fact-check output (services/script-generator/src/
+   * factCheck.ts): specific numbers/percentages/years found in `text` that do
+   * not appear anywhere in the trend's `sourceSummaries`. Advisory only — it
+   * flags unverified claims for the human reviewer, it does not block
+   * generation or prove a claim is false. Omitted (not an empty array) when
+   * nothing was flagged, so most script.json files never carry this key.
+   */
+  factCheckWarnings: z.array(z.string()).optional(),
 });
 export type ScriptSegment = z.infer<typeof scriptSegmentSchema>;
 

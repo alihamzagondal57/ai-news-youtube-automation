@@ -23,8 +23,15 @@ export const config = {
   remotionCompositionId: "NewsVideo",
 
   video: {
-    width: Number(process.env.RENDER_WIDTH ?? 3840),
-    height: Number(process.env.RENDER_HEIGHT ?? 2160),
+    // Interim default while the GCE render VM's billing is being sorted (see
+    // docs/SETUP.md and infra/gcp/README.md): 1080p renders locally on a
+    // desktop CPU in reasonable time, where 4K does not. The 4K capability
+    // itself is untouched — set RENDER_WIDTH=3840 RENDER_HEIGHT=2160 (or any
+    // other resolution) to override; nothing else in the render pipeline
+    // hardcodes a resolution (NewsVideo.tsx reads width/height from its
+    // `resolution` prop, which buildInputProps.ts fills in from this config).
+    width: Number(process.env.RENDER_WIDTH ?? 1920),
+    height: Number(process.env.RENDER_HEIGHT ?? 1080),
     fps: Number(process.env.RENDER_FPS ?? 30),
   },
   /**

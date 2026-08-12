@@ -61,6 +61,28 @@ export interface ProviderDefinition {
 
 export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
   {
+    id: "deepseek",
+    label: "DeepSeek",
+    // Provisional pending qualify-providers.mts results — see
+    // docs/LICENSING.md §3.2 and this file's git history for the measured
+    // outcome that set rank/productionUse/disabledReason to their final
+    // values.
+    rank: 1,
+    envKey: "DEEPSEEK_API_KEY",
+    modelEnvKey: "SCRIPT_DEEPSEEK_MODEL",
+    // deepseek-chat (V3), not deepseek-reasoner: the reasoner model emits
+    // chain-of-thought before its answer, which complicates JSON-mode
+    // parsing for no benefit here (this is prose generation, not a math/code
+    // problem needing visible reasoning).
+    defaultModel: "deepseek-chat",
+    maxOutputTokens: 8000,
+    cost: "Paid, ~$0.14/M output as of docs/LICENSING.md §3.2's research — billing required (a nonzero account balance, not just a key).",
+    howToGetKey: "https://platform.deepseek.com/api_keys — sign up, add billing, create a key.",
+    productionUse: "permitted",
+    create: (apiKey, model) =>
+      new OpenAICompatibleProvider({ name: "deepseek", apiKey, baseURL: "https://api.deepseek.com/v1", model, maxTokens: 8000 }),
+  },
+  {
     id: "gemini",
     label: "Google Gemini (AI Studio)",
     rank: 4,
@@ -85,21 +107,22 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     envKey: "GITHUB_MODELS_TOKEN",
     modelEnvKey: "SCRIPT_GITHUB_MODEL",
     defaultModel: "gpt-4o",
-    // GitHub Models' free tier caps gpt-4o output at 4,096 tokens. A full
-    // the-explainer script (~2,900 words ≈ 3,800 tokens) sits right against
-    // that ceiling, so this provider is expected to truncate on the longest
-    // structures — the qualification run will show whether it does.
     maxOutputTokens: 4000,
-    cost: "Free with any GitHub account (rate-limited)",
-    howToGetKey:
-      "https://github.com/settings/personal-access-tokens — 'Fine-grained token', no repo access needed, set Account permissions > Models to 'Read-only'. Copy the ghp_/github_pat_ value.",
-    notes: "QUALIFIED (measured): gpt-4o passed both bracket structures — rapid-wire 212-220, the-explainer 334-385 words/segment — with tight length control. DEV DEFAULT ONLY — see productionUse.",
-    // GitHub's docs scope the free tier to prototyping: "once you are ready to
-    // bring your application to production, opt in to paid usage". Kept as the
-    // dev default so the pipeline runs end-to-end for free during development;
-    // must be swapped for a paid/commercial-permitted provider before publishing
-    // monetized video. docs/LICENSING.md §3.2.
+    cost: "N/A — service retired, see disabledReason",
+    howToGetKey: "N/A — service retired, see disabledReason",
+    notes: "Was QUALIFIED (measured, 2026-07): gpt-4o passed both bracket structures — rapid-wire 212-220, the-explainer 334-385 words/segment. No longer usable at all — see disabledReason.",
     productionUse: "prototype-only",
+    // PERMANENTLY RETIRED, not a token/auth problem: GitHub Models was fully
+    // shut down 2026-07-30 (confirmed via GitHub's own changelog and docs —
+    // "the playground, model catalog, inference API, and BYOK are no longer
+    // available to any customer"). A freshly-generated token still gets
+    // rejected by models.inference.ai.azure.com while being independently
+    // confirmed VALID against GitHub's own /rate_limit endpoint (200,
+    // authenticated 5000/hr tier) — the token is fine, the service is gone.
+    // No amount of token rotation will ever fix this; kept in the catalog
+    // only so buildProviderChain silently skips it rather than erroring, and
+    // so this historical qualification result isn't lost.
+    disabledReason: "GitHub Models was permanently retired 2026-07-30. The service no longer exists — this is not fixable by rotating GITHUB_MODELS_TOKEN.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "github-models", apiKey, baseURL: "https://models.inference.ai.azure.com", model, maxTokens: 8000 }),
   },
@@ -134,14 +157,16 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     maxOutputTokens: 8000,
     cost: "Free experiment tier",
     howToGetKey: "https://console.mistral.ai/api-keys — sign up, create a key. Free 'Experiment' plan, no card.",
-    notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form. PROVEN on quality (428-455 words on the-explainer) — the paid tier is the leading production candidate at ~$0.50/mo at 2 videos/week.",
+    notes: "OpenAI-compatible. mistral-large-latest is the flagship; strong long-form.",
     // The FREE "Experiment" tier is prototyping-only; the PAID tier permits
     // commercial use. Flag reflects the free tier this key would use today.
     productionUse: "prototype-only",
     disabledReason:
-      "OPERATIONAL, not quality: length/insight PASS (the-explainer 428-455 in band), but the free Experiment tier " +
-      "returns 429 partway through a single script's two-phase calls (plan + 6-7 segments + retries), so it cannot " +
-      "reliably finish even one script. Revivable by adding inter-call throttling, or on a paid tier.",
+      "Re-measured (2026-08): rapid-wire PASSES (229-314 words/segment), but the-explainer fails on verbatim_lifting " +
+      "(400-517 words/segment — length is fine, it's copying too many consecutive words from the source summaries) " +
+      "across all 10 attempts, not the earlier run's 429/rate-limit issue. Quality profile is NOT stable across runs — " +
+      "re-run qualify-providers.mts before trusting either result over the other; do not re-enable on the strength of " +
+      "one passing run alone.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "mistral", apiKey, baseURL: "https://api.mistral.ai/v1", model, maxTokens: 8000 }),
   },
@@ -161,36 +186,78 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     notes: "Gateway to many models; the :free tier is rate-limited and slow. Override model with SCRIPT_OPENROUTER_MODEL.",
     productionUse: "prototype-only",
     disabledReason:
-      "nemotron-3-super-120b passed rapid-wire (215-236) but TRUNCATED the-explainer at the 16k output cap, and ran " +
-      "~6-7 min/structure (~15 min/script) — impractical. A smaller/faster free model might qualify; re-test via SCRIPT_OPENROUTER_MODEL.",
+      "Re-measured (2026-08): nemotron-3-super-120b passed rapid-wire (199-250, 841s) but TRUNCATED the-explainer at " +
+      "the 16k output cap (342-428 words/segment reached before cutoff, 957s) — same failure mode as originally " +
+      "measured, confirmed stable across runs. ~14-16min/structure — impractical regardless. A smaller/faster free " +
+      "model might qualify; re-test via SCRIPT_OPENROUTER_MODEL.",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "openrouter", apiKey, baseURL: "https://openrouter.ai/api/v1", model, maxTokens: 16000 }),
   },
   {
     id: "groq",
     label: "Groq",
-    rank: 4,
+    // PRIMARY (2026-08): the only currently-qualified provider that is both
+    // free and actually reachable — Claude/DeepSeek above are correctly
+    // ranked higher for quality but neither is funded right now (no
+    // ANTHROPIC_API_KEY; DEEPSEEK_API_KEY exists with a $0 balance and will
+    // 402 on every attempt until funded). Re-promote DeepSeek above this once
+    // it's actually funded AND re-qualified with real output, not on the
+    // strength of the unfunded run's structure alone.
+    rank: 1,
     envKey: "GROQ_API_KEY",
     modelEnvKey: "SCRIPT_GROQ_MODEL",
     // llama-3.3-70b-versatile was measured incapable of reaching the per-segment
-    // word budgets (caps ~165 words/segment regardless of the brief). Defaulted
-    // to a substantially larger model; if that also fails, Groq is dropped
-    // rather than allowed to ship short scripts.
+    // word budgets (caps ~165 words/segment regardless of the brief). gpt-oss-120b
+    // is the model that actually qualifies — see disabledReason's removal below
+    // for why the earlier 139-196 words/segment measurement doesn't apply anymore.
     defaultModel: "openai/gpt-oss-120b",
-    // MEASURED: Groq's free tier caps this model at 8,000 tokens per MINUTE
-    // (input + output combined), so the output ceiling has to leave room for a
-    // ~2k-token prompt. This also means roughly one attempt per minute — a real
-    // operational constraint, not just a sizing detail.
+    // RE-QUALIFIED (2026-08): the original failure (94-196 words/segment) was
+    // measured BEFORE the two-phase per-segment rewrite (generate.ts, commit
+    // 672d3b6) — the old single-JSON-call-for-all-segments approach rations
+    // output budget across every field, undercutting every model by ~2x
+    // regardless of provider. Re-tested post-rewrite, PASSED both bracket
+    // structures for real, twice on the harder one:
+    //   rapid-wire:    PASS, 164s, 201-238 words/segment (band 180-320)
+    //   the-explainer: PASS, 127s, 354-397 words/segment (band 330-520)
+    //   the-explainer: PASS, 144s, 383-493 words/segment (re-run for stability)
+    // Separately confirmed: gpt-oss-120b is a REASONING model — Groq returns
+    // its chain-of-thought in a `reasoning` field, which consumes the bulk of
+    // max_tokens before any visible `content` appears. This is why the ceiling
+    // has to stay conservative (see maxOutputTokens below), and it's the real
+    // mechanism behind the historical under-length failures — the two-phase
+    // rewrite didn't cause this, it just no longer compounds it across every
+    // segment in one call.
+    //
+    // CAVEAT (read before assuming "passes validation" == "fact-checked"):
+    // spot-checking the actual prose against the qualification fixture's
+    // source summaries found the same fabrication pattern already documented
+    // for DeepSeek/Mistral — e.g. one run stated the EU's 2030 target as "a
+    // forty-five percent cut," a specific figure not in the source summaries
+    // and inconsistent with the real Fit-for-55 target (55%). The mechanical
+    // validation bar (word count, anti-lifting, insight-groundedness) does not
+    // catch invented statistics, because it checks overlap with the sources,
+    // not truth. Script output should get a fact-check pass before anything
+    // downstream trusts it, same as every other free/cheap provider here.
+    //
+    // MEASURED: the account's TPM (tokens/minute) limit for this model is a hard
+    // 8,000, and Groq's 413 check counts the REQUESTED max_tokens ceiling (not
+    // actual usage) against it — a max_tokens of 8192 alone exceeds the limit
+    // before a single input token is added. 5,500 leaves headroom for the
+    // segment/plan prompt (~1-1.5k tokens) plus the reasoning overhead above.
     maxOutputTokens: 5500,
     cost: "Free tier",
     howToGetKey: "https://console.groq.com/keys — sign up, 'Create API Key'. No credit card.",
     notes:
-      "Free tier caps gpt-oss-120b at 8,000 tokens/minute (input+output), so retries are ~1/minute.",
-    productionUse: "prototype-only",
-    disabledReason:
-      "FAILS the length bar on every model tested. llama-3.3-70b-versatile produced 94-167 words/segment and " +
-      "openai/gpt-oss-120b produced 139-196, against the-explainer's 300-450 requirement; gpt-oss also truncates " +
-      "under the free tier's 8k tokens/minute cap. Re-run qualify-providers.mts to re-test (e.g. on a paid tier).",
+      "Model is a reasoning model (chain-of-thought counted in the token budget); free tier caps it at 8,000 " +
+      "tokens/minute (input+output, counted against requested max_tokens, not actual usage). The SDK's built-in " +
+      "retry/backoff rides out 429s, but near-ceiling calls can wait most of a minute between attempts.",
+    // Groq's Services Agreement (console.groq.com/docs/legal/services-agreement
+    // §8.1): customer retains all IP rights in Inputs and Outputs, and this is
+    // not tier-gated — the free tier carries the same commercial-use rights as
+    // paid. §6.3(f)'s only restriction is preserving AI-provenance disclosure
+    // markers on outputs, which this pipeline already does (synthetic-media
+    // disclosure on every upload, per docs/LICENSING.md).
+    productionUse: "permitted",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "groq", apiKey, baseURL: "https://api.groq.com/openai/v1", model, maxTokens: 5500 }),
   },

@@ -1,9 +1,22 @@
 import { JobStore, createLogger, scriptSchema, trendSchema } from "@ai-news/shared";
 import { getStructure } from "@ai-news/shared/script-structure";
 import { buildProviders, config } from "./config.js";
+import { checkSegmentClaims, sourceNumberIndex } from "./factCheck.js";
 import { generateScript } from "./generate.js";
 import { activeProviderLicensing } from "./providers/registry.js";
+import type { ScriptProvider } from "./providers/types.js";
 import { resolveJobStructure } from "./structureSelection.js";
+
+export interface RunScriptGenerationOptions {
+  /**
+   * Injectable, same reasoning as runYoutubeUpload's {client} option and
+   * runTrendResearch's {providers}: defaults to the real registry chain
+   * (which skips any disabledReason entry), but a caller can substitute an
+   * explicit list — e.g. to dev-test a disabled provider directly, bypassing
+   * the live-chain filter without touching registry.ts's actual state.
+   */
+  providers?: ScriptProvider[];
+}
 
 /**
  * Pipeline entry point, invoked per job by GitHub Actions.
@@ -11,7 +24,7 @@ import { resolveJobStructure } from "./structureSelection.js";
  * Reads `trend.json`, resolves the job's script structure (override → recorded
  * → auto-rotate), generates and validates the script, and writes `script.json`.
  */
-export async function runScriptGeneration(jobId: string): Promise<void> {
+export async function runScriptGeneration(jobId: string, options: RunScriptGenerationOptions = {}): Promise<void> {
   const logger = createLogger("script-generator");
   const store = JobStore.fromEnv();
 
@@ -37,7 +50,7 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
     jobId,
     trend,
     structure,
-    providers: buildProviders(),
+    providers: options.providers ?? buildProviders(),
     maxAttempts: config.maxAttempts,
     logger,
   });
@@ -45,6 +58,26 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
   // Validate against the shared contract before writing, so a shape change in
   // this service can never publish an artifact downstream steps can't read.
   const script = scriptSchema.parse(result.script);
+
+  // Lightweight fact-check (mechanical, not an LLM call — see factCheck.ts):
+  // flag numbers/percentages/years in each segment that never appear in the
+  // trend's sourceSummaries, so the reviewer sees a concrete warning instead
+  // of trusting the script blindly. Advisory only — never blocks a write.
+  const sourceNumbers = sourceNumberIndex(trend.sourceSummaries);
+  let segmentsWithWarnings = 0;
+  script.segments = script.segments.map((segment) => {
+    const warnings = checkSegmentClaims(segment.text, sourceNumbers);
+    if (warnings.length === 0) return segment;
+    segmentsWithWarnings++;
+    return { ...segment, factCheckWarnings: warnings };
+  });
+  if (segmentsWithWarnings > 0) {
+    logger.warn(
+      { jobId, segmentsWithWarnings, totalSegments: script.segments.length },
+      "Fact-check flagged unverified numeric claims — reviewer should double-check before publishing",
+    );
+  }
+
   await store.putJson(store.jobKey(jobId, "script.json"), script);
 
   logger.info(
@@ -55,6 +88,7 @@ export async function runScriptGeneration(jobId: string): Promise<void> {
       model: result.model,
       calls: result.calls,
       segments: script.segments.length,
+      segmentsWithFactCheckWarnings: segmentsWithWarnings,
     },
     "Wrote script.json",
   );
