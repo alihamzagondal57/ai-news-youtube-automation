@@ -41,6 +41,10 @@ process.env.R2_SECRET_ACCESS_KEY = "S3RVER";
 process.env.R2_BUCKET_NAME = BUCKET;
 process.env.R2_ENDPOINT = `http://localhost:${S3_PORT}`;
 process.env.R2_FORCE_PATH_STYLE = "true";
+// render-server/src/config.ts requireEnv's this at module load, but it's only
+// ever checked by the HTTP layer's bearer-auth — runRender() is called
+// directly here, bypassing that layer entirely, so any non-empty value works.
+process.env.RENDER_SERVER_SHARED_SECRET = "ci-test-unused";
 
 const OUT_DIR = "/tmp/ci-render-test";
 
