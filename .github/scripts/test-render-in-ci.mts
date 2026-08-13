@@ -22,7 +22,7 @@
 // to that specific question — this script answers the fuller "does the whole
 // pipeline work end-to-end in CI" question).
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, copyFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -127,7 +127,10 @@ async function main() {
     console.log(`\n[${stamp()}] PIPELINE + RENDER COMPLETE in ${totalSeconds.toFixed(1)}s (${(totalSeconds / 60).toFixed(1)} min)`);
     console.log("Timings:", JSON.stringify(timings, null, 2));
 
-    await copyFile(join(dataDir, BUCKET, "jobs", JOB_ID, "render.mp4"), join(OUT_DIR, "render.mp4"));
+    // The real JobStore download path, not S3rver's internal on-disk layout
+    // (which suffixes stored objects with "._S3rver_object" — reaching into
+    // it directly, as an earlier version of this script did, 404s).
+    await store.downloadToFile(store.jobKey(JOB_ID, "render.mp4"), join(OUT_DIR, "render.mp4"));
     await writeFile(join(OUT_DIR, "timings.json"), JSON.stringify(timings, null, 2));
     await server.close();
     process.exit(0);
