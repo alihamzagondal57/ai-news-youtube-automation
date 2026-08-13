@@ -1,6 +1,7 @@
 // Diagnostic script for .github/workflows/test-render-in-ci.yml — runs the
 // full content pipeline (manual topic input, bypassing trend-research) plus
-// the render step, entirely inside this one CI job, timing every stage.
+// render and thumbnail generation, entirely inside this one CI job, timing
+// every stage.
 //
 // Storage is an in-process S3-compatible mock (s3rver) writing to the
 // runner's own SSD-backed temp dir — same pattern as .smoke-test/*.mts, no
@@ -16,6 +17,12 @@
 // own timeout-minutes killed it. Every exit path now explicitly closes the
 // server and calls process.exit().
 //
+// The entire jobs/{jobId}/ tree is downloaded via the real JobStore API
+// (listKeys + downloadToFile — not S3rver's internal on-disk layout, which
+// suffixes objects with "._S3rver_object" and bit an earlier version of this
+// script) so the run can be reconstructed into a local persistent store
+// afterward and reviewed in review-dashboard, same shape as a real job.
+//
 // Not part of the regular pipeline — this file exists only to answer: does a
 // standard GitHub-hosted runner's SSD avoid the local-HDD render bottleneck
 // (see .github/scripts/render-only-test.mts for the isolated, faster answer
@@ -23,6 +30,7 @@
 // pipeline work end-to-end in CI" question).
 import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -32,8 +40,12 @@ const execFileAsync = promisify(execFile);
 const REPO = process.cwd();
 const S3_PORT = 4590;
 const BUCKET = "ai-news-pipeline";
-const JOB_ID = "c1c1c1c1-0000-4000-8000-000000000001";
-const STRUCTURE_ID = "timeline"; // shortest realistic structure, ~5-6min of real script
+const JOB_ID = "c1c1c1c1-0000-4000-8000-000000000002";
+// deep-dive is the only structure with a FIXED segment count (3, vs.
+// e.g. timeline's variable 5-7) -- the tightest structural lever available
+// for biasing toward a shorter total length; still not a hard guarantee,
+// LLM output length varies run to run (see the two earlier ~10-12min runs).
+const STRUCTURE_ID = process.env.CI_TEST_STRUCTURE_ID || "deep-dive";
 
 process.env.R2_ACCOUNT_ID = "ci";
 process.env.R2_ACCESS_KEY_ID = "S3RVER";
@@ -77,7 +89,7 @@ async function main() {
 
   try {
     await server.run();
-    console.log(`[${stamp()}] S3 mock on :${S3_PORT}, data dir ${dataDir} (runner SSD)`);
+    console.log(`[${stamp()}] S3 mock on :${S3_PORT}, data dir ${dataDir} (runner SSD), structure=${STRUCTURE_ID}`);
 
     const { JobStore, trendSchema, jobManifestSchema, reviewStateSchema } = await import("@ai-news/shared");
     const store = JobStore.fromEnv();
@@ -121,17 +133,34 @@ async function main() {
     await runStep("media-sourcing", join(REPO, "services/media-sourcing/src/index.ts"));
     await setStep("render");
     await runStep("render", join(REPO, ".github/scripts/render-step.mts"));
+    await setStep("thumbnail-generator");
+    await runStep("thumbnail-generator", join(REPO, "services/thumbnail-generator/src/index.ts"));
+
+    // Park at review — this run's whole point is to be reconstructed locally
+    // and actually reviewed, same as a real job reaching the gate.
+    await setStep("review");
+    const finalManifest = await store.getJson(store.jobKey(JOB_ID, "job.json"), jobManifestSchema);
+    await store.putJson(store.jobKey(JOB_ID, "job.json"), { ...finalManifest, status: "completed", updatedAt: now() });
 
     const totalSeconds = (Date.now() - overallStart) / 1000;
     timings["TOTAL"] = totalSeconds;
-    console.log(`\n[${stamp()}] PIPELINE + RENDER COMPLETE in ${totalSeconds.toFixed(1)}s (${(totalSeconds / 60).toFixed(1)} min)`);
+    console.log(`\n[${stamp()}] PIPELINE + RENDER + THUMBNAIL COMPLETE in ${totalSeconds.toFixed(1)}s (${(totalSeconds / 60).toFixed(1)} min)`);
     console.log("Timings:", JSON.stringify(timings, null, 2));
 
-    // The real JobStore download path, not S3rver's internal on-disk layout
-    // (which suffixes stored objects with "._S3rver_object" — reaching into
-    // it directly, as an earlier version of this script did, 404s).
-    await store.downloadToFile(store.jobKey(JOB_ID, "render.mp4"), join(OUT_DIR, "render.mp4"));
+    // Download the ENTIRE jobs/{jobId}/ tree via the real JobStore API, so it
+    // can be reconstructed into a local persistent store afterward.
+    const prefix = store.jobKey(JOB_ID, "");
+    const keys = await store.listKeys(prefix);
+    console.log(`[${stamp()}] Downloading ${keys.length} job files for reconstruction...`);
+    for (const key of keys) {
+      const localPath = join(OUT_DIR, "job-tree", key);
+      await mkdir(dirname(localPath), { recursive: true });
+      await store.downloadToFile(key, localPath);
+    }
     await writeFile(join(OUT_DIR, "timings.json"), JSON.stringify(timings, null, 2));
+    await writeFile(join(OUT_DIR, "job-id.txt"), JOB_ID);
+    console.log(`[${stamp()}] Downloaded ${keys.length} files to ${OUT_DIR}/job-tree`);
+
     await server.close();
     process.exit(0);
   } catch (err) {
