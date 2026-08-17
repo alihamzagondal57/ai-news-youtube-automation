@@ -46,3 +46,9 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           CHANNEL_NAME: NationScope
+          # runRender() is called directly here, bypassing render-server's HTTP
+          # layer entirely, so this value is never actually checked -- config.ts
+          # just requires it to be non-empty at module load (see
+          # infra/render-server/src/config.ts and test-render-in-ci.mts, which
+          # hits the same requirement).
+          RENDER_SERVER_SHARED_SECRET: unused-direct-import-not-http
