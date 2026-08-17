@@ -16,6 +16,12 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
+      // Without this, the manifest <link> and service-worker registration
+      // are only injected into a production build (`vite build` + `preview`)
+      // -- `npm run dev` (how this app actually runs day to day, per
+      // start-pipeline.bat) would silently never show a browser Install
+      // button at all.
+      devOptions: { enabled: true, type: "module" },
       manifest: {
         name: "Review Dashboard",
         short_name: "Review",

@@ -1,73 +1,88 @@
 # How to run this yourself
 
-This is the plain-language version: exactly what to open and click. It assumes n8n and the review-dashboard are already running on your machine (see "Starting things up" below) and R2 is configured (see "Before any of this works" — read that first if you haven't set R2 up yet).
+No coding, no terminal commands. Everything below is "open this," "click that."
 
-## Before any of this works: R2 is required
+## 1. Start everything
 
-Every workflow (n8n's own local writes, and every step that runs on GitHub Actions) needs a real, shared, network-reachable place to read and write job files — that's Cloudflare R2. Without it, nothing beyond the very first step can run.
+1. Open the project's main folder (the one with `start-pipeline.bat` in it).
+2. Double-click **`start-pipeline.bat`**.
+3. A window titled "AI News Pipeline - Launcher" opens and prints a few lines while it starts things up. This takes up to about a minute the first time.
+4. Up to three more black windows open — these are the actual pipeline running. **Leave them open.** You can minimize them, but closing any of them stops that part of the pipeline.
+5. Your browser opens automatically to the dashboard once everything is ready. If it doesn't, go to **http://localhost:5173** yourself.
+6. The launcher window prints "You can close THIS window now" — that one (only that one) is safe to close; it's not one of the three running services.
 
-**What you need to do, once:**
-1. Cloudflare dashboard → R2 → **Create bucket** (any name, e.g. `ai-news-pipeline`).
-2. R2 → **Manage API tokens** → **Create API token** with **Object Read & Write** permission scoped to that bucket.
-3. Note down: **Account ID**, **Access Key ID**, **Secret Access Key**, and the bucket's **S3 endpoint URL** (shown on the token-creation screen).
-4. Give me those four values (paste them in chat — I'll write them into `.env` and GitHub Secrets without ever echoing them back), or set them yourself:
-   - In `.env` at the repo root: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET_NAME`.
-   - As GitHub repo secrets (Settings → Secrets and variables → Actions) with the same five names — every GitHub Actions workflow reads them from there, not from your local `.env`.
-5. Restart n8n so it picks up the new `.env` values (n8n reads `R2_*` from its own process environment for the small local writes it does — job.json updates, trend.json, review-state.json).
+That's it. Everything — the pipeline orchestrator, the review dashboard, and its web page — now runs on your own computer, and the heavy work (writing the script, generating the voice, rendering the video) happens on GitHub's servers, not your PC.
 
-Until this is done, a job will start and immediately fail at its first real write — that's expected, not a bug.
+**Re-running the script is always safe.** If some of it is already running, `start-pipeline.bat` notices and skips those parts — it won't open duplicates.
 
-## Starting things up
+## 2. If something isn't responding
 
-Two things need to be running locally:
+Just double-click `start-pipeline.bat` again. That fixes the large majority of "the page won't load" or "nothing's happening" situations, because it checks each piece and restarts only what's actually stopped.
 
-- **n8n** — the orchestrator. From the repo root:
-  ```bash
-  GITHUB_TOKEN=<your token> GITHUB_REPO=alihamzagondal57/ai-news-youtube-automation NODES_EXCLUDE='["n8n-nodes-base.localFileTrigger"]' n8n start
-  ```
-  Then open **http://localhost:5678** and log in (`operator@localhost.local` / `LocalOnly-Pipeline2026!` — this is a local-only login, not a real secret, already in the committed source).
-- **review-dashboard** — where you review and approve finished videos. From the repo root:
-  ```bash
-  npx tsx apps/review-dashboard/server/src/index.ts
-  ```
-  and separately, the frontend:
-  ```bash
-  npm run dev --workspace=@ai-news/review-dashboard-frontend
-  ```
-  Open the URL Vite prints (typically **http://localhost:5173**).
+If that doesn't help:
 
-## (a) Manual mode — you give it a topic
+1. Look at the three black windows for red error text. That usually tells you what's wrong (for example, a missing internet connection).
+2. Close all three black windows (and the launcher window, if it's still open), then double-click `start-pipeline.bat` again for a clean restart.
+3. Still stuck? Restart your computer and double-click `start-pipeline.bat` once more. This clears out anything stuck in a bad state.
+4. If it says it can't find `.env`, don't move or rename `start-pipeline.bat` — keep it in the project's main folder.
 
-1. In the review-dashboard frontend, click **+ New job** (top right of the job list).
-2. Type a **topic** (required) and optionally an **angle**.
-3. Pick a **resolution** — 480p/720p/1080p/2K/4K. If you pick 4K without a dedicated render VM configured, a warning appears: 4K will render on GitHub's shared runner CPU, which is slow but does work.
-4. Click **Start pipeline run**. You're redirected to a live status page that polls and shows which step is currently running.
+## 3. Making a video with your own topic (manual mode)
 
-Behind the scenes: the dashboard calls n8n's webhook, n8n writes the job's initial files, then dispatches each step (script, voiceover, captions, media, metadata, render, thumbnail) as a separate GitHub Actions run, waiting for each to finish before starting the next. Nothing heavy runs on your PC.
+1. In the dashboard (**http://localhost:5173**), click **+ New job**.
+2. Type a **topic** — whatever you want the video to be about.
+3. Optionally, type an **angle** (a specific take or focus for the topic). You can leave this blank.
+4. Pick a **resolution**. 1080p is the default and a safe choice; higher resolutions (2K/4K) take much longer to finish since they render on GitHub's shared computers, not a dedicated fast machine.
+5. Click **Start pipeline run**.
+6. You're taken to a status page that updates itself and shows which step is currently running (script → voiceover → captions → media → metadata → render → thumbnail).
 
-**Alternative: trigger manual mode directly from n8n**, without the dashboard — open the **Manual Mode - Full Pipeline** workflow in n8n, use the **On form submission** trigger's hosted form (n8n shows its URL, typically `http://localhost:5678/form/manual-mode-start`), fill in topic/angle/resolution there instead.
+You don't need to do anything else — leave the tab open or close it, the job keeps running either way. It typically takes roughly 30–90 minutes depending on the topic length and resolution; 1080p renders are the slowest single step, sometimes over an hour.
 
-## (b) Auto mode — it picks a trending topic itself
+## 4. How auto mode works
 
-The **Auto Mode - Full Pipeline** workflow in n8n runs on a daily schedule (06:00 by default — change this in the workflow's **Daily schedule** trigger node if you want a different time). It runs trend-research first (also on GitHub Actions) to pick a topic, then the same script→voiceover→...→thumbnail chain as manual mode.
+Auto mode runs by itself every day at a set time (06:00 by default) — it picks its own trending topic, then goes through the exact same steps as a manual job (script, voiceover, captions, media, metadata, render, thumbnail). You don't need to do anything for this to happen; it's already turned on.
 
-To run it once immediately instead of waiting for the schedule: open the workflow in n8n and click **Execute workflow**.
+If you want to trigger it right now instead of waiting for the daily schedule:
 
-**Important:** both `Manual Mode - Full Pipeline` and `Auto Mode - Full Pipeline` need to be **Published** in n8n (top-right "Publish" button in the editor) for their triggers (webhook / schedule) to actually listen. If you ever republish after an edit, do it for both.
+1. Open n8n at **http://localhost:5678** and log in (`operator@localhost.local` / `LocalOnly-Pipeline2026!` — this login only works from your own computer, it's not a real secret).
+2. Open the **Auto Mode - Full Pipeline** workflow.
+3. Click **Execute workflow** near the top.
 
-## (c) How a finished video reaches you for approval
+Either way — scheduled or manually triggered — the finished video lands in the review dashboard exactly like a manual job does (see below).
 
-Once every step succeeds, the job's `currentStep` becomes `review` and it appears in the review-dashboard's job list automatically (no action needed — just refresh or wait for the list to poll). Open it to watch the real rendered video, see the generated title/description/thumbnail, and any fact-check warnings on individual segments.
+## 5. Reviewing and approving a finished video
 
-- **Voice / Theme**: pick from the dropdown/swatches — theme applies instantly; voice needs a full re-render to take effect (a re-render isn't wired up from the dashboard yet — that's a manual re-run for now).
-- **Approve**: click **Approve**. This flips the job's review status and (if you've set `N8N_APPROVAL_WEBHOOK_URL` in `.env` to n8n's `release-on-approval` webhook) automatically triggers `08-upload-youtube.yml` on GitHub Actions, which uploads the real video, sets the thumbnail, and applies the mandatory AI-content disclosure — all on GitHub's infrastructure, not your PC.
-- **Reject**: marks it abandoned; nothing further happens.
+1. Open the dashboard (**http://localhost:5173**). Finished videos show up automatically in the job list as **"awaiting review"** — no action needed to make them appear, just open the page.
+2. Click a job to open it. You'll see the full script broken into scenes, the actual rendered video, the generated title/description, and the thumbnail.
+3. Some scenes may show a **"⚠ Unverified against sources"** note — this flags specific numbers or dates the AI couldn't confirm against its source material. Worth a quick read before approving; it doesn't mean the video is wrong, just that those specific claims haven't been double-checked.
+4. If you want to swap a clip in any scene, click **"Click to use this clip"** under any of the alternatives shown.
+5. When you're happy with it, click **Approve**. This automatically uploads the real video to YouTube, sets the thumbnail, and applies the required AI-content disclosure — all in the background on GitHub's servers, nothing further for you to do. The video is published as **Public**.
+6. If a video isn't good enough to publish, click **Reject** instead — it's marked abandoned and nothing further happens with it.
+
+## 6. Installing the dashboard as its own app (optional)
+
+You can make the review dashboard open like a real desktop app — its own window, its own icon — instead of a browser tab:
+
+1. Open **http://localhost:5173** in **Chrome** or **Edge** (not the launcher's automatic window, a real browser).
+2. Look at the right side of the address bar for an install icon (a little monitor-with-arrow icon), or open the browser's menu (⋮) and look for **"Install Review Dashboard..."**.
+3. Click it, then click **Install** in the confirmation popup.
+4. The dashboard now has its own icon on your desktop / Start menu, and opens in its own window from now on — no address bar, no browser tabs.
+
+You still need `start-pipeline.bat` running in the background for the installed app to work — installing it as an app just changes how you open it, not what it needs to run.
 
 ## Quick reference
 
 | What | Where |
 |---|---|
-| n8n | http://localhost:5678 |
-| review-dashboard | http://localhost:5173 (frontend) / :4000 (API) |
-| Manual-mode form (direct from n8n) | http://localhost:5678/form/manual-mode-start |
-| GitHub Actions runs | https://github.com/alihamzagondal57/ai-news-youtube-automation/actions |
+| Start everything | Double-click `start-pipeline.bat` |
+| Dashboard (where you review and approve) | http://localhost:5173 |
+| n8n (only needed to trigger auto mode manually) | http://localhost:5678 |
+| GitHub Actions (see the real progress of each step, if curious) | https://github.com/alihamzagondal57/ai-news-youtube-automation/actions |
+
+## Appendix: one-time setup (already done — for reference only)
+
+Everything below was already configured for this project. You should never need to touch it unless you're setting this up fresh on a new computer.
+
+- **Cloudflare R2** (the shared storage every step reads/writes to) — bucket created, credentials saved in `.env` and as GitHub repo secrets.
+- **GitHub token** (`GITHUB_TOKEN` in `.env`) — lets n8n start GitHub Actions runs on your behalf.
+- **n8n workflows published** — both `Manual Mode - Full Pipeline` and `Auto Mode - Full Pipeline` are published in n8n so their triggers listen for jobs. If you ever edit one of these workflows yourself, click **Publish** again afterward or it'll stop working.
+- **Node.js, n8n, and project dependencies installed** on this computer — `start-pipeline.bat` assumes these are already in place; it starts things, it doesn't install them.

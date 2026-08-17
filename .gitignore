@@ -22,6 +22,7 @@ youtube-token*.json
 
 # Build output
 dist/
+dev-dist/
 build/
 out/
 remotion/out/
