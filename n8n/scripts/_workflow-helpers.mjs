@@ -112,8 +112,6 @@ const GH_HEADERS = [
 export function runStepViaGithubActions(prefix, n, label, workflowFile, options = {}) {
   const maxWaitMinutes = options.maxWaitMinutes ?? 20;
   const pollName = `Poll: ${label}`;
-  const succeededName = `Succeeded? ${label}`;
-  const failName = `Failed: ${label}`;
 
   const nodes = [
     {
@@ -165,8 +163,22 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile, options 
           `  }`,
           `}`,
           ``,
+          // Deciding success/failure HERE, by throwing, instead of via a
+          // downstream IF node: a real, live test proved the IF-node path
+          // unreliable — a confirmed-true condition (GitHub run genuinely
+          // "completed"/"success") was reproducibly routed to the node's
+          // own false branch, with the connections JSON and condition JSON
+          // both verified correct against n8n's documented shape. A thrown
+          // error from a Code node is n8n's most basic, unambiguous failure
+          // path — nothing left to mis-route.
           `const succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';`,
-          `return [{ json: { succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, status: run ? run.status : null, conclusion: run ? run.conclusion : null } }];`,
+          `if (!succeeded) {`,
+          `  const status = run ? run.status : 'not found';`,
+          `  const conclusion = run ? run.conclusion : null;`,
+          `  const htmlUrl = run ? run.html_url : '(no run found before timeout)';`,
+          `  throw new Error('GitHub Actions run for "${label}" did not succeed (status: ' + status + ', conclusion: ' + conclusion + '). See ' + htmlUrl);`,
+          `}`,
+          `return [{ json: { succeeded: true, runId: run.id, htmlUrl: run.html_url } }];`,
         ].join("\n"),
       },
       id: id(prefix, n),
@@ -175,43 +187,11 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile, options 
       typeVersion: 2,
       position: [0, 0],
     },
-    {
-      parameters: {
-        conditions: {
-          options: { caseSensitive: true, leftValue: "", typeValidation: "strict" },
-          conditions: [{ leftValue: "={{ $json.succeeded }}", rightValue: true, operator: { type: "boolean", operation: "equal" } }],
-          combinator: "and",
-        },
-      },
-      id: id(prefix, n + 1),
-      name: succeededName,
-      type: "n8n-nodes-base.if",
-      typeVersion: 2.3,
-      position: [0, 0],
-    },
-    {
-      parameters: {
-        errorMessage: `=GitHub Actions run for "${label}" did not succeed (status: {{ $json.status }}, conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}`,
-      },
-      id: id(prefix, n + 2),
-      name: failName,
-      type: "n8n-nodes-base.stopAndError",
-      typeVersion: 1,
-      position: [0, 0],
-    },
   ];
 
-  const connections = {
-    [pollName]: { main: [[{ node: succeededName, type: "main", index: 0 }]] },
-    [succeededName]: {
-      main: [
-        [], // true branch: caller connects this node's output 0 to whatever comes next
-        [{ node: failName, type: "main", index: 0 }], // false -> stop
-      ],
-    },
-  };
+  const connections = {};
 
-  return { nodes, connections, firstNodeName: pollName, lastNodeName: succeededName };
+  return { nodes, connections, firstNodeName: pollName, lastNodeName: pollName };
 }
 
 /**
