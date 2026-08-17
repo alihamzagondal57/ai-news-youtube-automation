@@ -93,6 +93,15 @@ const GH_HEADERS = [
  * running workflow, not for triggering one) and GITHUB_REPO ("owner/repo")
  * in n8n's own process environment.
  *
+ * The dispatch-and-poll loop runs entirely inside ONE Code node (real
+ * fetch() + setTimeout(), not n8n's graph-cycling via a Wait node looping
+ * back through chained IF nodes). That first design was tried and abandoned:
+ * across three real, live runs it reproducibly mis-routed a confirmed-true
+ * boolean condition to the "false" output — root cause never pinned down
+ * (the connections and condition JSON both looked correct against n8n's
+ * documented IF-node shape) — while a single Code node's control flow is
+ * plain JS with nothing left to mis-wire.
+ *
  * workflow_dispatch has no synchronous response with a run id, so the run is
  * found afterward by listing recent workflow_dispatch runs for this workflow
  * file and taking the newest one created at/after the dispatch timestamp —
@@ -100,98 +109,58 @@ const GH_HEADERS = [
  * identical no-lock reasoning), not safe under concurrent dispatches of the
  * same workflow.
  */
-export function runStepViaGithubActions(prefix, n, label, workflowFile) {
-  const stampName = `Dispatch: ${label}`;
-  const waitName = `Wait: ${label}`;
-  const listRunsName = `Find run: ${label}`;
-  const evalName = `Eval run: ${label}`;
-  const stillWaitingName = `Still waiting? ${label}`;
+export function runStepViaGithubActions(prefix, n, label, workflowFile, options = {}) {
+  const maxWaitMinutes = options.maxWaitMinutes ?? 20;
+  const pollName = `Poll: ${label}`;
   const succeededName = `Succeeded? ${label}`;
   const failName = `Failed: ${label}`;
 
   const nodes = [
     {
       parameters: {
-        method: "POST",
-        url: `=${GH_API}/actions/workflows/${workflowFile}/dispatches`,
-        sendHeaders: true,
-        headerParameters: { parameters: GH_HEADERS },
-        sendBody: true,
-        specifyBody: "json",
-        jsonBody: "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
-        options: {},
-      },
-      id: id(prefix, n),
-      name: stampName,
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4.2,
-      position: [0, 0],
-    },
-    {
-      // Stamped as its own step (not folded into the dispatch node) so
-      // "Find run" can look this timestamp up by node name regardless of
-      // how many times the poll loop has looped back through Wait/Find/Eval.
-      parameters: { mode: "runOnceForAllItems", jsCode: "return [{ json: { dispatchedAt: new Date().toISOString() } }];" },
-      id: id(prefix, n + 1),
-      name: `Stamp: ${label}`,
-      type: "n8n-nodes-base.code",
-      typeVersion: 2,
-      position: [0, 0],
-    },
-    {
-      parameters: { resume: "timeInterval", unit: "seconds", amount: 15 },
-      id: id(prefix, n + 2),
-      name: waitName,
-      type: "n8n-nodes-base.wait",
-      typeVersion: 1.1,
-      position: [0, 0],
-    },
-    {
-      parameters: {
-        method: "GET",
-        url: `=${GH_API}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
-        sendHeaders: true,
-        headerParameters: { parameters: GH_HEADERS },
-        options: {},
-      },
-      id: id(prefix, n + 3),
-      name: listRunsName,
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4.2,
-      position: [0, 0],
-    },
-    {
-      parameters: {
         mode: "runOnceForAllItems",
+        // Real code, not an n8n expression: {{ }} expressions and this
+        // sandbox both read $env the same way once
+        // N8N_BLOCK_ENV_ACCESS_IN_NODE=false is set (n8n 2.0+ default-denies
+        // env access in both places for the same security reason Execute
+        // Command is disabled by default).
         jsCode: [
-          `const dispatchedAt = new Date($('Stamp: ${label}').first().json.dispatchedAt).getTime();`,
-          // 5s slack: GitHub can take a moment to register a fresh run after dispatch.
-          `const runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);`,
-          `runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));`,
-          `const run = runs[0] || null;`,
-          `const stillWaiting = !run || run.status !== 'completed';`,
+          `const GH_API = 'https://api.github.com/repos/' + $env.GITHUB_REPO;`,
+          `const HEADERS = { Authorization: 'Bearer ' + $env.GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };`,
+          `const jobId = $('Job Context').first().json.jobId;`,
+          `const dispatchedAt = Date.now();`,
+          ``,
+          `const dispatchRes = await fetch(GH_API + '/actions/workflows/${workflowFile}/dispatches', {`,
+          `  method: 'POST', headers: { ...HEADERS, 'Content-Type': 'application/json' },`,
+          `  body: JSON.stringify({ ref: 'master', inputs: { jobId } }),`,
+          `});`,
+          `if (!dispatchRes.ok) throw new Error('GitHub dispatch for "${label}" failed: HTTP ' + dispatchRes.status + ' ' + await dispatchRes.text());`,
+          ``,
+          `const maxWaitMs = ${maxWaitMinutes} * 60 * 1000;`,
+          `const pollIntervalMs = 15000;`,
+          `let run = null;`,
+          `while (Date.now() - dispatchedAt < maxWaitMs) {`,
+          `  await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));`,
+          `  const listRes = await fetch(GH_API + '/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5', { headers: HEADERS });`,
+          `  if (!listRes.ok) continue;`,
+          `  const body = await listRes.json();`,
+          `  const candidates = (body.workflow_runs || [])`,
+          `    .filter((r) => new Date(r.created_at).getTime() >= dispatchedAt - 5000)`,
+          `    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));`,
+          `  if (candidates.length > 0) {`,
+          `    run = candidates[0];`,
+          `    if (run.status === 'completed') break;`,
+          `  }`,
+          `}`,
+          ``,
           `const succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';`,
-          `return [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];`,
+          `return [{ json: { succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, status: run ? run.status : null, conclusion: run ? run.conclusion : null } }];`,
         ].join("\n"),
       },
-      id: id(prefix, n + 4),
-      name: evalName,
+      id: id(prefix, n),
+      name: pollName,
       type: "n8n-nodes-base.code",
       typeVersion: 2,
-      position: [0, 0],
-    },
-    {
-      parameters: {
-        conditions: {
-          options: { caseSensitive: true, leftValue: "", typeValidation: "strict" },
-          conditions: [{ leftValue: "={{ $json.stillWaiting }}", rightValue: true, operator: { type: "boolean", operation: "equal" } }],
-          combinator: "and",
-        },
-      },
-      id: id(prefix, n + 5),
-      name: stillWaitingName,
-      type: "n8n-nodes-base.if",
-      typeVersion: 2.3,
       position: [0, 0],
     },
     {
@@ -202,7 +171,7 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile) {
           combinator: "and",
         },
       },
-      id: id(prefix, n + 6),
+      id: id(prefix, n + 1),
       name: succeededName,
       type: "n8n-nodes-base.if",
       typeVersion: 2.3,
@@ -210,9 +179,9 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile) {
     },
     {
       parameters: {
-        errorMessage: `=GitHub Actions run for "${label}" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}`,
+        errorMessage: `=GitHub Actions run for "${label}" did not succeed (status: {{ $json.status }}, conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}`,
       },
-      id: id(prefix, n + 7),
+      id: id(prefix, n + 2),
       name: failName,
       type: "n8n-nodes-base.stopAndError",
       typeVersion: 1,
@@ -221,17 +190,7 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile) {
   ];
 
   const connections = {
-    [stampName]: { main: [[{ node: `Stamp: ${label}`, type: "main", index: 0 }]] },
-    [`Stamp: ${label}`]: { main: [[{ node: waitName, type: "main", index: 0 }]] },
-    [waitName]: { main: [[{ node: listRunsName, type: "main", index: 0 }]] },
-    [listRunsName]: { main: [[{ node: evalName, type: "main", index: 0 }]] },
-    [evalName]: { main: [[{ node: stillWaitingName, type: "main", index: 0 }]] },
-    [stillWaitingName]: {
-      main: [
-        [{ node: waitName, type: "main", index: 0 }], // true -> loop back
-        [{ node: succeededName, type: "main", index: 0 }], // false -> check outcome
-      ],
-    },
+    [pollName]: { main: [[{ node: succeededName, type: "main", index: 0 }]] },
     [succeededName]: {
       main: [
         [], // true branch: caller connects this node's output 0 to whatever comes next
@@ -240,7 +199,7 @@ export function runStepViaGithubActions(prefix, n, label, workflowFile) {
     },
   };
 
-  return { nodes, connections, firstNodeName: stampName, lastNodeName: succeededName };
+  return { nodes, connections, firstNodeName: pollName, lastNodeName: succeededName };
 }
 
 /**
@@ -300,14 +259,14 @@ export function buildScriptGeneratorOnward({ prefix, startFrom, mode }) {
   addBlock(b11);
   connect(gScript.lastNodeName, b11.firstNodeName); // "Succeeded?" true branch (output 0)
 
-  const gVoice = addGhStep(runStepViaGithubActions(prefix, 13, "voiceover", "03-generate-voiceover.yml"));
+  const gVoice = addGhStep(runStepViaGithubActions(prefix, 13, "voiceover", "03-generate-voiceover.yml", { maxWaitMinutes: 40 }));
   connect(b11.lastNodeName, gVoice.firstNodeName);
 
   const b21 = jobUpdateNodes(prefix, 21, "caption-sync", "caption-sync", mode);
   addBlock(b21);
   connect(gVoice.lastNodeName, b21.firstNodeName);
 
-  const gCaptions = addGhStep(runStepViaGithubActions(prefix, 23, "caption-sync", "04-generate-captions.yml"));
+  const gCaptions = addGhStep(runStepViaGithubActions(prefix, 23, "caption-sync", "04-generate-captions.yml", { maxWaitMinutes: 40 }));
   connect(b21.lastNodeName, gCaptions.firstNodeName);
 
   // ── Branch B (parallel): media-sourcing ──
@@ -339,7 +298,10 @@ export function buildScriptGeneratorOnward({ prefix, startFrom, mode }) {
   addBlock(b50);
   connect(gMeta.lastNodeName, b50.firstNodeName);
 
-  const gRender = addGhStep(runStepViaGithubActions(prefix, 52, "render", "07-trigger-render.yml"));
+  // Render is the slowest step by far (real prior runs: well over an hour
+  // at 1080p on a GitHub-hosted runner's CPU) — the default 20-minute cap
+  // would fail out a genuinely-still-working render.
+  const gRender = addGhStep(runStepViaGithubActions(prefix, 52, "render", "07-trigger-render.yml", { maxWaitMinutes: 180 }));
   connect(b50.lastNodeName, gRender.firstNodeName);
 
   // thumbnail-generator

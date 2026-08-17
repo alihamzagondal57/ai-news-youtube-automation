@@ -61,139 +61,13 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/08-upload-youtube.yml/dispatches",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
-            },
-            {
-              "name": "Accept",
-              "value": "application/vnd.github+json"
-            },
-            {
-              "name": "X-GitHub-Api-Version",
-              "value": "2022-11-28"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
-        "options": {}
+        "mode": "runOnceForAllItems",
+        "jsCode": "const GH_API = 'https://api.github.com/repos/' + $env.GITHUB_REPO;\nconst HEADERS = { Authorization: 'Bearer ' + $env.GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };\nconst jobId = $('Job Context').first().json.jobId;\nconst dispatchedAt = Date.now();\n\nconst dispatchRes = await fetch(GH_API + '/actions/workflows/08-upload-youtube.yml/dispatches', {\n  method: 'POST', headers: { ...HEADERS, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ ref: 'master', inputs: { jobId } }),\n});\nif (!dispatchRes.ok) throw new Error('GitHub dispatch for \"youtube-uploader\" failed: HTTP ' + dispatchRes.status + ' ' + await dispatchRes.text());\n\nconst maxWaitMs = 20 * 60 * 1000;\nconst pollIntervalMs = 15000;\nlet run = null;\nwhile (Date.now() - dispatchedAt < maxWaitMs) {\n  await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));\n  const listRes = await fetch(GH_API + '/actions/workflows/08-upload-youtube.yml/runs?event=workflow_dispatch&per_page=5', { headers: HEADERS });\n  if (!listRes.ok) continue;\n  const body = await listRes.json();\n  const candidates = (body.workflow_runs || [])\n    .filter((r) => new Date(r.created_at).getTime() >= dispatchedAt - 5000)\n    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\n  if (candidates.length > 0) {\n    run = candidates[0];\n    if (run.status === 'completed') break;\n  }\n}\n\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, status: run ? run.status : null, conclusion: run ? run.conclusion : null } }];"
       },
       "id": "11111111-0000-0000-0000-000000000010",
-      "name": "Dispatch: youtube-uploader",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        0,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
-      },
-      "id": "11111111-0000-0000-0000-000000000011",
-      "name": "Stamp: youtube-uploader",
+      "name": "Poll: youtube-uploader",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "resume": "timeInterval",
-        "unit": "seconds",
-        "amount": 15
-      },
-      "id": "11111111-0000-0000-0000-000000000012",
-      "name": "Wait: youtube-uploader",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        0,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/08-upload-youtube.yml/runs?event=workflow_dispatch&per_page=5",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
-            },
-            {
-              "name": "Accept",
-              "value": "application/vnd.github+json"
-            },
-            {
-              "name": "X-GitHub-Api-Version",
-              "value": "2022-11-28"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "11111111-0000-0000-0000-000000000013",
-      "name": "Find run: youtube-uploader",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        0,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const dispatchedAt = new Date($('Stamp: youtube-uploader').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
-      },
-      "id": "11111111-0000-0000-0000-000000000014",
-      "name": "Eval run: youtube-uploader",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.stillWaiting }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equal"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      },
-      "id": "11111111-0000-0000-0000-000000000015",
-      "name": "Still waiting? youtube-uploader",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
       "position": [
         0,
         0
@@ -220,7 +94,7 @@
           "combinator": "and"
         }
       },
-      "id": "11111111-0000-0000-0000-000000000016",
+      "id": "11111111-0000-0000-0000-000000000011",
       "name": "Succeeded? youtube-uploader",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -231,9 +105,9 @@
     },
     {
       "parameters": {
-        "errorMessage": "=GitHub Actions run for \"youtube-uploader\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+        "errorMessage": "=GitHub Actions run for \"youtube-uploader\" did not succeed (status: {{ $json.status }}, conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
       },
-      "id": "11111111-0000-0000-0000-000000000017",
+      "id": "11111111-0000-0000-0000-000000000012",
       "name": "Failed: youtube-uploader",
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -304,70 +178,8 @@
         ]
       ]
     },
-    "Dispatch: youtube-uploader": {
+    "Poll: youtube-uploader": {
       "main": [
-        [
-          {
-            "node": "Stamp: youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stamp: youtube-uploader": {
-      "main": [
-        [
-          {
-            "node": "Wait: youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait: youtube-uploader": {
-      "main": [
-        [
-          {
-            "node": "Find run: youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Find run: youtube-uploader": {
-      "main": [
-        [
-          {
-            "node": "Eval run: youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Eval run: youtube-uploader": {
-      "main": [
-        [
-          {
-            "node": "Still waiting? youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Still waiting? youtube-uploader": {
-      "main": [
-        [
-          {
-            "node": "Wait: youtube-uploader",
-            "type": "main",
-            "index": 0
-          }
-        ],
         [
           {
             "node": "Succeeded? youtube-uploader",
@@ -399,7 +211,7 @@
       "main": [
         [
           {
-            "node": "Dispatch: youtube-uploader",
+            "node": "Poll: youtube-uploader",
             "type": "main",
             "index": 0
           }
