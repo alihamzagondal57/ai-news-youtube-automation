@@ -5,7 +5,7 @@
 // _workflow-helpers.mjs's buildScriptGeneratorOnward — only how the job
 // starts (a daily cron + a real trend-research run, instead of a form +
 // direct trend.json write) differs.
-import { CD, buildScriptGeneratorOnward, create, id, login } from "./_workflow-helpers.mjs";
+import { CD, buildScriptGeneratorOnward, create, id, login, runStepViaGithubActions } from "./_workflow-helpers.mjs";
 
 function buildWorkflow() {
   const nodes = [];
@@ -77,19 +77,17 @@ function buildWorkflow() {
   });
   connect("Build: trend-research", "job.json: trend-research");
 
-  // 4. Run trend-research
-  nodes.push({
-    parameters: { command: `=${CD} && npx tsx services/trend-research/src/index.ts "{{ $('Job Context').first().json.jobId }}"` },
-    id: id(1, 5),
-    name: "Run trend-research",
-    type: "n8n-nodes-base.executeCommand",
-    typeVersion: 1,
-    position: [880, 0],
+  // 4. Run trend-research on GitHub Actions (see runStepViaGithubActions's
+  // doc comment — n8n only dispatches and polls, never runs the work itself)
+  const gTrend = runStepViaGithubActions(1, 5, "trend-research", "01-research-trending.yml");
+  nodes.push(...gTrend.nodes);
+  Object.entries(gTrend.connections).forEach(([from, conn]) => {
+    connections[from] = conn;
   });
-  connect("job.json: trend-research", "Run trend-research");
+  connect("job.json: trend-research", gTrend.firstNodeName);
 
   // 5 onward: script-generator -> ... -> park at review (shared with manual-mode.json)
-  const shared = buildScriptGeneratorOnward({ prefix: 2, startFrom: "Run trend-research", mode: "auto" });
+  const shared = buildScriptGeneratorOnward({ prefix: 2, startFrom: gTrend.lastNodeName, mode: "auto" });
   nodes.push(...shared.nodes);
   Object.entries(shared.connections).forEach(([from, conn]) => {
     connections[from] = conn;

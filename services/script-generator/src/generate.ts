@@ -1,6 +1,6 @@
 import type { Logger, Script, Trend } from "@ai-news/shared";
 import type { ScriptStructure } from "@ai-news/shared/script-structure";
-import { buildPlanPrompt, buildSegmentPrompt, PLAN_SYSTEM_PROMPT, SEGMENT_SYSTEM_PROMPT } from "./prompt.js";
+import { buildPlanPrompt, buildPlanSystemPrompt, buildSegmentPrompt, buildSegmentSystemPrompt } from "./prompt.js";
 import { extractJson, parseSegmentProse, planSchema, type GeneratedScript, type Plan } from "./schema.js";
 import type { CompletionResult, ScriptProvider } from "./providers/types.js";
 import {
@@ -148,7 +148,7 @@ async function generatePlan(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const completion = await track(() =>
       provider.complete({
-        system: PLAN_SYSTEM_PROMPT,
+        system: buildPlanSystemPrompt(trend.sourceSummaries.length > 0),
         user: buildPlanPrompt({ trend, structure, retryInstructions }),
         format: "json",
       }),
@@ -197,7 +197,7 @@ async function generateSegment(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const completion = await track(() =>
       provider.complete({
-        system: SEGMENT_SYSTEM_PROMPT,
+        system: buildSegmentSystemPrompt(trend.sourceSummaries.length > 0),
         user: buildSegmentPrompt({ trend, structure, segment, index: index + 1, total, retryInstructions }),
         format: "text",
       }),

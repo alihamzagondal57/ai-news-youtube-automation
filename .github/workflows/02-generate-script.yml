@@ -23,8 +23,9 @@ jobs:
         working-directory: services/script-generator
         run: npm run start -- "${{ inputs.jobId }}"
         env:
+          # GITHUB_MODELS_TOKEN deliberately omitted: the service was
+          # permanently retired 2026-07-30 (registry.ts's disabledReason).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}

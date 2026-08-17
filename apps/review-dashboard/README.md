@@ -16,6 +16,13 @@ targeted-re-render flow).
 - Persist all choices to `jobs/{jobId}/review-state.json` (`reviewStateSchema`).
 - On approve, set `review-state.json.status = "approved"` — the single event
   `youtube-uploader` gates on before it will run.
+- Surface **fact-check warnings** per segment (script-generator's
+  `factCheck.ts` output, carried on `script.json`'s `segment.factCheckWarnings`)
+  — an amber banner on any flagged segment plus a summary count on the
+  Decision panel. Mechanical, not an LLM call: a number/percentage/year in the
+  segment that never appears in the trend's `sourceSummaries`. Advisory only —
+  it does not block approval, it just makes an unverified claim visible before
+  a human clicks Approve.
 
 ## Layout
 ```

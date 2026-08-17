@@ -23,6 +23,11 @@ jobs:
         working-directory: services/youtube-uploader
         run: npm run start -- "${{ inputs.jobId }}"
         env:
+          # Not sensitive — a repo variable (Settings > Variables), not a
+          # secret. config.ts defaults to "private" if this is ever unset;
+          # this workflow previously set nothing at all here, so every real
+          # upload was landing private, not even "unlisted".
+          YOUTUBE_PRIVACY_STATUS: ${{ vars.YOUTUBE_PRIVACY_STATUS || 'public' }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}

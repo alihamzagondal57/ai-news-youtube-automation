@@ -1,5 +1,5 @@
 import "./style.css";
-import { api, type JobDetail, type ThemeCatalogEntry, type VoiceCatalogEntry } from "./api";
+import { api, type JobDetail, type ResolutionPreset, type ThemeCatalogEntry, type VoiceCatalogEntry } from "./api";
 
 const app = document.getElementById("app")!;
 
@@ -11,12 +11,19 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-// ── Router: #/ (job list) or #/job/:jobId (review view) ─────────────────────
+// ── Router: #/ (job list), #/new (start a job), or #/job/:jobId (review) ────
 function route(): void {
   const hash = location.hash.replace(/^#/, "");
-  const match = hash.match(/^\/job\/(.+)$/);
-  if (match) {
-    renderReviewView(decodeURIComponent(match[1]));
+  if (hash === "/new") {
+    renderNewJobView();
+    return;
+  }
+  const jobMatch = hash.match(/^\/job\/(.+)$/);
+  const runningMatch = hash.match(/^\/running\/(.+)$/);
+  if (jobMatch) {
+    renderReviewView(decodeURIComponent(jobMatch[1]));
+  } else if (runningMatch) {
+    renderRunningView(decodeURIComponent(runningMatch[1]));
   } else {
     renderJobList();
   }
@@ -26,7 +33,10 @@ window.addEventListener("hashchange", route);
 // ── Job list ─────────────────────────────────────────────────────────────
 async function renderJobList(): Promise<void> {
   app.innerHTML = `
-    <header class="app-header"><h1>Jobs awaiting review</h1></header>
+    <header class="app-header">
+      <h1>Jobs awaiting review</h1>
+      <a href="#/new" class="button-link">+ New job</a>
+    </header>
     <div id="job-list-container">Loading…</div>
   `;
   const container = document.getElementById("job-list-container")!;
@@ -56,6 +66,119 @@ async function renderJobList(): Promise<void> {
   } catch (err) {
     container.innerHTML = `<div class="empty-state">Failed to load jobs: ${escapeHtml((err as Error).message)}</div>`;
   }
+}
+
+// ── New job ──────────────────────────────────────────────────────────────
+const RESOLUTION_LABELS: Record<ResolutionPreset, string> = {
+  "480p": "480p (854×480)",
+  "720p": "720p (1280×720)",
+  "1080p": "1080p (1920×1080) — default",
+  "2k": "2K (2560×1440)",
+  "4k": "4K (3840×2160)",
+};
+
+async function renderNewJobView(): Promise<void> {
+  app.innerHTML = `
+    <a href="#/" class="back-link">&larr; All jobs</a>
+    <header class="app-header"><h1>New job</h1></header>
+    <div class="panel">
+      <div class="field-row"><label>Topic</label><input type="text" id="new-job-topic" placeholder="What should this video be about?" style="flex:1"></div>
+      <div class="field-row"><label>Angle</label><input type="text" id="new-job-angle" placeholder="optional — defaults to the topic"></div>
+      <div class="field-row">
+        <label>Resolution</label>
+        <select id="new-job-resolution">
+          ${Object.entries(RESOLUTION_LABELS)
+            .map(([id, label]) => `<option value="${id}" ${id === "1080p" ? "selected" : ""}>${escapeHtml(label)}</option>`)
+            .join("")}
+        </select>
+      </div>
+      <div id="new-job-4k-warning" class="fact-check-warning" style="display:none">
+        <span class="fact-check-warning-title">⚠ No render VM configured</span> — 4K will render locally on this machine's CPU, which is impractically slow. It will still work, just expect a long render.
+      </div>
+      <div class="action-row">
+        <button class="primary" id="new-job-start-btn">Start pipeline run</button>
+      </div>
+      <div class="status-line" id="new-job-status"></div>
+    </div>
+  `;
+
+  const resolutionSelect = document.getElementById("new-job-resolution") as HTMLSelectElement;
+  const warning = document.getElementById("new-job-4k-warning")!;
+  const startBtn = document.getElementById("new-job-start-btn") as HTMLButtonElement;
+  const statusEl = document.getElementById("new-job-status")!;
+
+  let hasRenderVm = true; // fail open — don't warn if the capability check itself fails
+  try {
+    ({ hasRenderVm } = await api.getRenderCapability());
+  } catch {
+    // ignore — warning just won't show
+  }
+
+  const updateWarning = () => {
+    warning.style.display = resolutionSelect.value === "4k" && !hasRenderVm ? "block" : "none";
+  };
+  resolutionSelect.addEventListener("change", updateWarning);
+  updateWarning();
+
+  startBtn.addEventListener("click", async () => {
+    const topic = (document.getElementById("new-job-topic") as HTMLInputElement).value.trim();
+    const angle = (document.getElementById("new-job-angle") as HTMLInputElement).value.trim();
+    if (!topic) {
+      statusEl.textContent = "Topic is required.";
+      statusEl.style.color = "var(--accent)";
+      return;
+    }
+    startBtn.disabled = true;
+    statusEl.textContent = "Starting pipeline run…";
+    statusEl.style.color = "var(--text-muted)";
+    try {
+      const { jobId } = await api.createJob({
+        topic,
+        angle: angle || undefined,
+        resolution: resolutionSelect.value as ResolutionPreset,
+      });
+      location.hash = `/running/${encodeURIComponent(jobId)}`;
+    } catch (err) {
+      statusEl.textContent = `Failed to start: ${(err as Error).message}`;
+      statusEl.style.color = "var(--accent)";
+      startBtn.disabled = false;
+    }
+  });
+}
+
+// ── Running-job progress (polls job.json until it reaches the review gate) ──
+function renderRunningView(jobId: string): void {
+  app.innerHTML = `
+    <a href="#/" class="back-link">&larr; All jobs</a>
+    <header class="app-header"><h1>Pipeline running</h1></header>
+    <div class="panel">
+      <div class="job-meta">${escapeHtml(jobId)}</div>
+      <div id="running-status" class="status-line">Starting…</div>
+    </div>
+  `;
+  const statusEl = document.getElementById("running-status")!;
+
+  const poll = async () => {
+    try {
+      const manifest = await api.getJobStatus(jobId);
+      if (manifest.status === "failed") {
+        statusEl.textContent = `Failed at ${manifest.currentStep ?? "?"}: ${manifest.error ?? "unknown error"}`;
+        statusEl.style.color = "var(--accent)";
+        return;
+      }
+      if (manifest.currentStep === "review" && manifest.status === "completed") {
+        statusEl.textContent = "Reached the review gate — redirecting…";
+        location.hash = `/job/${encodeURIComponent(jobId)}`;
+        return;
+      }
+      statusEl.textContent = `Running: ${manifest.currentStep ?? "…"}`;
+      setTimeout(poll, 4000);
+    } catch (err) {
+      statusEl.textContent = `Lost track of job status: ${(err as Error).message} — retrying…`;
+      setTimeout(poll, 4000);
+    }
+  };
+  poll();
 }
 
 // ── Review view ──────────────────────────────────────────────────────────
@@ -132,6 +255,13 @@ async function renderReviewView(jobId: string): Promise<void> {
 
         <div class="panel">
           <h2>Decision</h2>
+          ${
+            job.segments.some((s) => s.factCheckWarnings.length > 0)
+              ? `<div class="fact-check-warning">
+                  <span class="fact-check-warning-title">⚠ ${job.segments.filter((s) => s.factCheckWarnings.length > 0).length} segment(s) have unverified claims</span> — see highlighted segments below before approving.
+                </div>`
+              : ""
+          }
           <div class="field-row"><label>Reviewed by</label><input type="text" id="reviewed-by" placeholder="optional name"></div>
           <div class="action-row">
             <button class="primary" id="approve-btn">Approve</button>
@@ -169,6 +299,14 @@ function renderSegments(job: JobDetail): void {
         <span class="segment-time">${s.startSeconds.toFixed(1)}s &ndash; ${s.endSeconds.toFixed(1)}s</span>
       </div>
       <div class="segment-text">${escapeHtml(s.text)}</div>
+      ${
+        s.factCheckWarnings.length > 0
+          ? `<div class="fact-check-warning">
+              <span class="fact-check-warning-title">⚠ Unverified against sources — check before publishing:</span>
+              <ul>${s.factCheckWarnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>
+            </div>`
+          : ""
+      }
       <div class="clip-row">
         ${s.currentClip ? `<video class="clip-thumb current" src="${s.currentClip.url}" muted loop playsinline title="Current clip"></video>` : ""}
         ${s.alternatives
@@ -229,13 +367,19 @@ function wireThemePanel(job: JobDetail): void {
   grid.querySelectorAll<HTMLDivElement>(".theme-swatch").forEach((swatch) => {
     swatch.addEventListener("click", async () => {
       const themeId = swatch.dataset.themeId!;
-      setStatus("Saving theme override… (a full re-render is required for this to take effect)");
+      const previouslySelected = grid.querySelector<HTMLDivElement>(".theme-swatch.selected");
+
+      // Apply on click, not on server confirmation — a theme pick should feel
+      // instant. Reverted below only if the save itself fails.
+      grid.querySelectorAll(".theme-swatch").forEach((s) => s.classList.remove("selected"));
+      swatch.classList.add("selected");
+      setStatus("Theme applied — saving… (a full re-render is required for this to take effect)");
       try {
         await api.patchReviewState(job.jobId, { themeId });
-        grid.querySelectorAll(".theme-swatch").forEach((s) => s.classList.remove("selected"));
-        swatch.classList.add("selected");
         setStatus("Theme saved. A full re-render is needed for it to take effect.");
       } catch (err) {
+        swatch.classList.remove("selected");
+        previouslySelected?.classList.add("selected");
         setStatus(`Failed to save theme: ${(err as Error).message}`, true);
       }
     });

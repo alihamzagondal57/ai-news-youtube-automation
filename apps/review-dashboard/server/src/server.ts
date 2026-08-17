@@ -1,10 +1,11 @@
 import { createReadStream } from "node:fs";
 import cors from "@fastify/cors";
-import { renderStyleSchema, type JobStore } from "@ai-news/shared";
+import { jobManifestSchema, renderStyleSchema, type JobStore } from "@ai-news/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { config } from "./config.js";
 import { getJobDetail, listJobsAwaitingReview } from "./jobs.js";
+import { RESOLUTION_PRESET_IDS, startManualJob } from "./newJob.js";
 import { notifyApproval } from "./n8nWebhook.js";
 import { patchReviewState, removeClipOverride, setReviewStatus, upsertClipOverride } from "./reviewState.js";
 import { listThemeCatalog } from "./themes.js";
@@ -25,6 +26,12 @@ const clipOverrideBodySchema = z.object({
 
 const reviewActionBodySchema = z.object({
   reviewedBy: z.string().nullable().optional(),
+});
+
+const newJobBodySchema = z.object({
+  topic: z.string().min(1),
+  angle: z.string().optional(),
+  resolution: z.enum([...RESOLUTION_PRESET_IDS] as [string, ...string[]]),
 });
 
 /** Built as a factory (not a module-level singleton) so tests can point it at an s3rver-backed JobStore instead of real R2 — see docs/REVIEW-DASHBOARD.md and the e2e test. */
@@ -48,6 +55,35 @@ export function buildServer(store: JobStore): FastifyInstance {
   });
 
   app.get("/api/themes", async () => ({ themes: listThemeCatalog() }));
+
+  app.get("/api/render-capability", async () => ({
+    // Whether a real GCE render VM is configured — 4K works either way, but
+    // only fast on the VM; local rendering falls back to the desktop CPU.
+    hasRenderVm: Boolean(process.env.GCP_PROJECT_ID),
+    resolutions: RESOLUTION_PRESET_IDS,
+  }));
+
+  app.post("/api/jobs", async (request, reply) => {
+    const parsed = newJobBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.message });
+    }
+    try {
+      const jobId = await startManualJob(parsed.data as { topic: string; angle?: string; resolution: (typeof RESOLUTION_PRESET_IDS)[number] });
+      return { jobId };
+    } catch (err) {
+      return reply.code(502).send({ error: `Could not start job via n8n: ${(err as Error).message}` });
+    }
+  });
+
+  app.get("/api/jobs/:jobId/status", async (request, reply) => {
+    const { jobId } = request.params as { jobId: string };
+    const manifest = await store.getJsonIfExists(store.jobKey(jobId, "job.json"), jobManifestSchema);
+    if (!manifest) {
+      return reply.code(404).send({ error: `Job ${jobId} not found` });
+    }
+    return manifest;
+  });
 
   app.get("/api/voices", async () => ({ voices: listVoiceCatalog() }));
 

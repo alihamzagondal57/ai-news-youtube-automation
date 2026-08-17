@@ -71,11 +71,14 @@ export interface BuildInputPropsOptions {
   style?: RenderStyle;
   /** Per-segment clip swaps chosen in the review dashboard, from the segment's own alternatives. */
   clipOverrides?: SegmentClipOverride[];
+  /** Per-job resolution override from review-state.json; falls back to config.video when unset. */
+  resolution?: { width: number; height: number } | null;
 }
 
 export function buildInputProps(assets: JobAssets, options: BuildInputPropsOptions = {}): NewsVideoRenderProps {
   const { script, segmentTiming, captions, mediaManifest } = assets;
-  const { fps, width, height } = config.video;
+  const { fps } = config.video;
+  const { width, height } = options.resolution ?? config.video;
   const theme = getThemeOrDefault(options.themeId ?? DEFAULT_THEME_ID);
   const transitionFrames = theme.transition.frames;
 

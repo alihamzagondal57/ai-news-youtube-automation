@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -36,22 +38,72 @@ export async function probeVideoDurationSeconds(path: string): Promise<number> {
 }
 
 export interface FrameTimestampOptions {
-  fractionOfDuration: number;
-  minSeconds: number;
-  maxSeconds: number;
+  /** How many candidate timestamps to sample and compare. */
+  candidateCount: number;
+  /** Fraction of the duration to skip at both the start (intro stinger) and end (outro card). */
+  marginFraction: number;
 }
 
 /**
- * Clamps a fraction of the video's duration into [minSeconds, maxSeconds] —
- * representative of the video without depending on segment-timing.json, and
- * far enough in to skip the intro stinger's fade-from-black opening frame.
- * Also clamped below the video's own length so a very short render (under
- * minSeconds) still gets an in-bounds timestamp rather than seeking past EOF.
+ * Candidate timestamps spread evenly across the video's middle, skipping
+ * `marginFraction` at both ends — replaces a previous fixed-fraction pick
+ * (always ~12% in, clamped to an 8s ceiling) that put the frame inside the
+ * intro stinger for any video longer than about a minute, which is the
+ * opposite of what it was meant to avoid.
  */
-export function pickRepresentativeTimestamp(durationSeconds: number, options: FrameTimestampOptions): number {
-  const target = durationSeconds * options.fractionOfDuration;
-  const withinWindow = Math.min(Math.max(target, options.minSeconds), options.maxSeconds);
-  return Math.min(withinWindow, Math.max(durationSeconds - 0.1, 0));
+export function pickCandidateTimestamps(durationSeconds: number, options: FrameTimestampOptions): number[] {
+  const { candidateCount, marginFraction } = options;
+  const lastValidSecond = Math.max(durationSeconds - 0.1, 0);
+  const start = durationSeconds * marginFraction;
+  const end = durationSeconds * (1 - marginFraction);
+  const span = end - start;
+
+  if (candidateCount <= 1 || span <= 0) {
+    return [Math.min(Math.max(durationSeconds * 0.4, 0), lastValidSecond)];
+  }
+  const timestamps: number[] = [];
+  for (let i = 0; i < candidateCount; i++) {
+    const t = start + (span * (i + 0.5)) / candidateCount;
+    timestamps.push(Math.min(t, lastValidSecond));
+  }
+  return timestamps;
+}
+
+export interface BestFrameResult {
+  timestampSeconds: number;
+  outputPath: string;
+}
+
+/**
+ * Extracts a frame at each candidate timestamp and keeps the one whose PNG
+ * is largest on disk, as a cheap proxy for visual complexity: a flat title
+ * card, a near-solid transition frame, or a plain gradient background all
+ * compress to a noticeably smaller PNG than a frame with real footage detail
+ * and color variety. No extra dependency (OpenCV, image-analysis libs) —
+ * just the ffmpeg extraction this file already does, run a handful of times.
+ */
+export async function pickBestFrame(
+  videoPath: string,
+  durationSeconds: number,
+  workDir: string,
+  options: FrameTimestampOptions,
+): Promise<BestFrameResult> {
+  const candidates = pickCandidateTimestamps(durationSeconds, options);
+
+  let best: (BestFrameResult & { size: number }) | null = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const timestampSeconds = candidates[i];
+    const candidatePath = join(workDir, `frame-candidate-${i}.png`);
+    await extractFrame(videoPath, timestampSeconds, candidatePath);
+    const { size } = await stat(candidatePath);
+    if (!best || size > best.size) {
+      best = { timestampSeconds, outputPath: candidatePath, size };
+    }
+  }
+  if (!best) {
+    throw new Error(`pickBestFrame produced no candidates for a ${durationSeconds}s video`);
+  }
+  return { timestampSeconds: best.timestampSeconds, outputPath: best.outputPath };
 }
 
 /**

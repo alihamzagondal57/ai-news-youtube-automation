@@ -8,4 +8,6 @@ export const QUOTA_COSTS = {
   videosInsert: 1600,
   thumbnailsSet: 50,
   playlistItemsInsert: 50,
+  videosUpdate: 50,
+  videosList: 1,
 } as const;

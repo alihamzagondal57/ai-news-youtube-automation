@@ -1,4 +1,18 @@
-name: 07 - Trigger Render
+name: 07 - Render
+
+# Renders directly on the GitHub-hosted runner — no GCE render VM. That VM
+# was the original plan while 4K was the default, but the pipeline now
+# defaults to 1080p (see infra/render-server/src/config.ts) and this repo is
+# public, so GitHub Actions minutes are free/unlimited on standard runners.
+# 4K still works if a job's review-state.json.resolution override requests
+# it (see reviewOverrides.ts) — it's just slow on a runner's CPU, which the
+# review-dashboard's "New job" screen warns about at selection time.
+#
+# Proven pattern: identical checkout/build/render steps to
+# test-render-in-ci.yml's full-pipeline mode, which produced a real
+# 9-minute video end-to-end earlier in this project. The only difference is
+# this workflow points at real R2 (via secrets), not the local S3 mock that
+# test workflow uses.
 
 on:
   workflow_dispatch:
@@ -8,52 +22,27 @@ on:
         required: true
 
 jobs:
-  trigger-render:
+  render:
     runs-on: ubuntu-latest
+    # The slowest step in the pipeline, especially above 1080p — real headroom.
+    timeout-minutes: 180
     steps:
-      # This job does NOT render anything itself — 4K Remotion rendering runs on a
-      # Google Compute Engine VM (infra/render-server), not on a GitHub-hosted runner.
-      # The VM is stopped between jobs to save cost, so: start it, wait for
-      # render-server to come up, kick off the render, then let render-server's
-      # own async callback to n8n (and self-shutdown) take it from there.
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-
-      - name: Start render VM
-        run: |
-          gcloud compute instances start "$GCP_INSTANCE_NAME" --zone="$GCP_ZONE" --quiet
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Builds @ai-news/shared, remotion, and infra/render-server (composite
+      # project refs) — render-step.mts imports render-server's runRender()
+      # directly, so its dist/ (and its dependencies') must exist first.
+      - run: npx tsc -b
+      - name: Render
+        run: npx tsx .github/scripts/render-step.mts "${{ inputs.jobId }}"
         env:
-          GCP_INSTANCE_NAME: ${{ secrets.GCP_INSTANCE_NAME }}
-          GCP_ZONE: ${{ secrets.GCP_ZONE }}
-
-      - name: Wait for render-server to be ready
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf "$RENDER_SERVER_URL/health" >/dev/null; then
-              echo "render-server is up"
-              exit 0
-            fi
-            echo "Waiting for render-server ($i/30)..."
-            sleep 10
-          done
-          echo "render-server did not become ready in time" >&2
-          exit 1
-        env:
-          RENDER_SERVER_URL: ${{ secrets.RENDER_SERVER_URL }}
-
-      - name: Trigger render
-        run: |
-          curl -sf -X POST "$RENDER_SERVER_URL/render" \
-            -H "Authorization: Bearer $RENDER_SERVER_SHARED_SECRET" \
-            -H "Content-Type: application/json" \
-            -d "{\"jobId\": \"${{ inputs.jobId }}\"}"
-        env:
-          RENDER_SERVER_URL: ${{ secrets.RENDER_SERVER_URL }}
-          RENDER_SERVER_SHARED_SECRET: ${{ secrets.RENDER_SERVER_SHARED_SECRET }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          CHANNEL_NAME: NationScope

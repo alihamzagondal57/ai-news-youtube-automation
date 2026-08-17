@@ -41,8 +41,15 @@ export const trendSchema = z.object({
   jobId: z.string().uuid(),
   topic: z.string(),
   angle: z.string(),
-  sourceUrls: z.array(z.string().url()).min(1),
-  sourceSummaries: z.array(z.string()).min(1),
+  /**
+   * Empty for a manual-mode job entered directly in the review dashboard with
+   * no research step — script-generator's fact-check then has nothing to
+   * cross-reference, so every claim comes back flagged as unverified. That's
+   * accurate, not a bug: nothing WAS verified. Non-empty for every
+   * trend-research-sourced job, same as before this field allowed empty.
+   */
+  sourceUrls: z.array(z.string().url()).default([]),
+  sourceSummaries: z.array(z.string()).default([]),
 });
 export type Trend = z.infer<typeof trendSchema>;
 
@@ -309,6 +316,13 @@ export const reviewStateSchema = z.object({
   /** Named saved preset this styling came from, if any (for the preset library). */
   stylePresetId: z.string().nullable().default(null),
   style: renderStyleSchema.default({}),
+  /**
+   * Per-job render resolution override, set at manual-job creation (see the
+   * review dashboard's "New job" screen); null uses render-server's own
+   * RENDER_WIDTH/RENDER_HEIGHT default. Read by render-server's
+   * resolveReviewOverrides, same pattern as style/clipOverrides.
+   */
+  resolution: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).nullable().default(null),
   clipOverrides: z.array(segmentClipOverrideSchema).default([]),
   reviewedBy: z.string().nullable().default(null),
   updatedAt: z.string().datetime(),

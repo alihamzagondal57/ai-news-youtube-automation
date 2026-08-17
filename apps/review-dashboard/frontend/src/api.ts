@@ -24,6 +24,8 @@ export interface SegmentDetail {
   endSeconds: number;
   currentClip: ClipSource | null;
   alternatives: ClipSource[];
+  /** Mechanical fact-check warnings (numbers/dates not found in the sources) — advisory, empty when nothing was flagged. */
+  factCheckWarnings: string[];
 }
 
 export interface RenderStyle {
@@ -75,6 +77,24 @@ export interface VoiceCatalogEntry {
   hasSample: boolean;
 }
 
+export type ResolutionPreset = "480p" | "720p" | "1080p" | "2k" | "4k";
+
+export interface RenderCapability {
+  hasRenderVm: boolean;
+  resolutions: ResolutionPreset[];
+}
+
+export interface JobManifest {
+  jobId: string;
+  mode: "manual" | "auto";
+  status: "pending" | "running" | "completed" | "failed";
+  currentStep: string | null;
+  niche: string;
+  createdAt: string;
+  updatedAt: string;
+  error?: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -108,4 +128,11 @@ export const api = {
 
   reject: (jobId: string, reviewedBy?: string) =>
     request<ReviewState>(`/jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reviewedBy: reviewedBy ?? null }) }),
+
+  getRenderCapability: () => request<RenderCapability>("/render-capability"),
+
+  createJob: (input: { topic: string; angle?: string; resolution: ResolutionPreset }) =>
+    request<{ jobId: string }>("/jobs", { method: "POST", body: JSON.stringify(input) }),
+
+  getJobStatus: (jobId: string) => request<JobManifest>(`/jobs/${jobId}/status`),
 };

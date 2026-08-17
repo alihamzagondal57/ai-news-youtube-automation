@@ -25,7 +25,7 @@ jobs:
         working-directory: services/thumbnail-generator
         run: npm run start -- "${{ inputs.jobId }}"
         env:
-          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'EuroWire News' }}
+          CHANNEL_NAME: ${{ vars.CHANNEL_NAME || 'NationScope' }}
           # Optional by design (docs/LICENSING.md §3.6) — the free Hugging Face
           # credit, no payment method configured. Missing/exhausted falls back to
           # a real render.mp4 frame, then the theme's own gradient; never fails

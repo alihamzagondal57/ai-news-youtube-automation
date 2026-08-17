@@ -15,7 +15,7 @@ export const config = {
   height: Number(process.env.THUMBNAIL_HEIGHT ?? 720),
 
   branding: {
-    channelName: process.env.CHANNEL_NAME ?? "EuroWire News",
+    channelName: process.env.CHANNEL_NAME ?? "NationScope",
   },
 
   /**
@@ -30,13 +30,14 @@ export const config = {
   huggingFaceToken: process.env.HUGGINGFACE_API_TOKEN || null,
 
   /**
-   * The representative frame is grabbed at this fraction of render.mp4's total
-   * duration, clamped into [minSeconds, maxSeconds]. Skips the intro stinger's
-   * fade-in/black frame without needing segment-timing.json as an input.
+   * The representative frame is picked from several candidates spread across
+   * the middle of render.mp4 (skipping marginFraction at both ends — the
+   * intro stinger and the outro card), keeping whichever candidate looks
+   * most visually detailed (see frame.ts's pickBestFrame). No dependency on
+   * segment-timing.json as an input.
    */
   frame: {
-    fractionOfDuration: Number(process.env.THUMBNAIL_FRAME_FRACTION ?? 0.12),
-    minSeconds: Number(process.env.THUMBNAIL_FRAME_MIN_SECONDS ?? 1.5),
-    maxSeconds: Number(process.env.THUMBNAIL_FRAME_MAX_SECONDS ?? 8),
+    candidateCount: Number(process.env.THUMBNAIL_FRAME_CANDIDATES ?? 6),
+    marginFraction: Number(process.env.THUMBNAIL_FRAME_MARGIN_FRACTION ?? 0.1),
   },
 };

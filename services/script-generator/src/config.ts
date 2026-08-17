@@ -9,6 +9,9 @@ export const config = {
    * that were still improving.
    */
   maxAttempts: Number(process.env.SCRIPT_MAX_ATTEMPTS ?? 3),
+
+  /** Same env var and default as infra/render-server's on-screen branding — kept in sync so the spoken script and the video's own lower-third/ticker never name different channels. */
+  channelName: process.env.CHANNEL_NAME ?? "NationScope",
 };
 
 /**

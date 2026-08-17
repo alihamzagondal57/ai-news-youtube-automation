@@ -1,11 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { JobStore, createLogger, scriptSchema, type Logger, type Script } from "@ai-news/shared";
 import { DEFAULT_THEME_ID } from "@ai-news/shared/theme";
 import { z } from "zod";
 import { config } from "./config.js";
-import { extractFrame, pickRepresentativeTimestamp, probeVideoDurationSeconds } from "./frame.js";
+import { pickBestFrame, probeVideoDurationSeconds } from "./frame.js";
 import { deriveThumbnailHeadline } from "./headline.js";
 import { generateTopicImage, type GenerateTopicImageResult } from "./imageGen.js";
 import { buildImagePrompt } from "./prompt.js";
@@ -15,7 +15,6 @@ type GenerateImageFn = (prompt: string, outputPath: string) => Promise<GenerateT
 
 const jobThemeSchema = z.object({ themeId: z.string() });
 const IMAGE_FILE = "thumbnail-background.png";
-const FRAME_FILE = "thumbnail-frame.png";
 
 /** Mirrors JobStore's own not-found check (services/shared/src/job-store/r2.ts) — not exported, so re-derived here for the one raw-file case JobStore's typed helpers don't cover. */
 function isNotFound(err: unknown): boolean {
@@ -68,14 +67,13 @@ async function resolveBackground(
     await store.downloadToFile(store.jobKey(jobId, "render.mp4"), videoPath);
 
     const durationSeconds = await probeVideoDurationSeconds(videoPath);
-    const timestampSeconds = pickRepresentativeTimestamp(durationSeconds, config.frame);
-    await extractFrame(videoPath, timestampSeconds, join(work, FRAME_FILE));
+    const best = await pickBestFrame(videoPath, durationSeconds, work, config.frame);
 
     logger.info(
-      { jobId, timestampSeconds: Number(timestampSeconds.toFixed(2)), durationSeconds: Number(durationSeconds.toFixed(1)) },
-      "Extracted representative frame from render.mp4",
+      { jobId, timestampSeconds: Number(best.timestampSeconds.toFixed(2)), durationSeconds: Number(durationSeconds.toFixed(1)) },
+      "Picked most visually detailed candidate frame from render.mp4",
     );
-    return { src: FRAME_FILE, source: "video-frame" };
+    return { src: basename(best.outputPath), source: "video-frame" };
   } catch (err) {
     if (!isNotFound(err)) throw err;
     logger.info({ jobId }, "No render.mp4 either — falling back to a themed still with no background image");

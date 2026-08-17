@@ -41,7 +41,7 @@ export const config = {
    */
   renderConcurrency: process.env.RENDER_CONCURRENCY ? Number(process.env.RENDER_CONCURRENCY) : undefined,
   branding: {
-    channelName: process.env.CHANNEL_NAME ?? "EuroWire News",
+    channelName: process.env.CHANNEL_NAME ?? "NationScope",
     accentColor: process.env.ACCENT_COLOR ?? "#e11d2e",
   },
 

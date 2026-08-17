@@ -7,10 +7,11 @@ restriction obligations.
 
 **Audience:** a **solo creator** monetizing AI-generated news videos.
 
-> Last audited: 2026-07-28 (FLUX.1 [schnell] + Hugging Face Inference
-> Providers added, §3.6). Licenses and SaaS terms change — re-verify the two
-> 🔴 blockers and any 🟡 item against the linked source before launch. This
-> document is an engineering audit, not legal advice.
+> Last audited: 2026-08 (Groq re-qualified and confirmed commercially
+> compliant, §3.2a — resolves the production-LLM blocker for now). Licenses
+> and SaaS terms change — re-verify the remaining 🔴 blocker and any 🟡 item
+> against the linked source before launch. This document is an engineering
+> audit, not legal advice.
 
 ---
 
@@ -19,7 +20,8 @@ restriction obligations.
 | # | Item | Verdict | Why |
 |---|---|---|---|
 | 🔴 | **Remotion** (render engine) | **Blocker** | Free for a solo creator *by headcount*, but **an automated render pipeline requires the paid "Remotion for Automators" license regardless of team size** — and this project is exactly that. |
-| 🔴 | **GitHub Models free tier** (primary script + metadata LLM) | **Blocker** | GitHub's own docs scope the free tier to **prototyping/experimentation, not production**. Using it to produce monetized videos is outside its terms. |
+| ✅ | **Groq free tier** (current primary script LLM, `openai/gpt-oss-120b`) | **Compliant — resolves the LLM blocker** | Unlike every other free tier below, Groq's Services Agreement (§8.1) grants full customer IP ownership of Outputs and does **not** gate that on payment status — the free tier carries the same commercial-use rights as paid. Re-qualified 2026-08 against the strict quality bar (both bracket structures, for real, twice on the harder one). The only obligation is preserving AI-provenance disclosure (§6.3(f)), already satisfied by this pipeline's synthetic-media disclosure. See §3.2a for the full writeup, including a fact-invention caveat that is a quality/trust concern, not a licensing one. |
+| ✅ | **GitHub Models free tier** (was primary script + metadata LLM) | **Moot — service retired** | GitHub fully shut this service down 2026-07-30 (confirmed via GitHub's own changelog/docs). Was already scoped to prototyping/non-production only, so this stops being a licensing blocker for the reason it no longer exists to use at all, not because the terms improved. §3.2 has the full history and what replaces it. |
 | ✅ | **Edge TTS** (`edge-tts` path) | **Removed** | Undocumented Microsoft "Read Aloud" endpoint; **no public terms permit commercial/programmatic use**; blocked on datacenter IPs. **Deleted** from the codebase — Kokoro is the sole production TTS. |
 | 🟡 | **Pexels / Pixabay footage** | **Use with rules** | Free for commercial use, no attribution — **but** identifiable people, logos/brands, and buildings can carry third-party rights the stock license does **not** clear. Editorial rules below. |
 | 🟡 | **Pixabay / stock music** | **Use with rules** | Free in a larger work (not standalone). Can trigger YouTube **Content ID** claims — keep the license record to clear them. |
@@ -32,15 +34,17 @@ restriction obligations.
 | 🟢 | **YouTube Data API v3** | **Clear, with disclosure** | Uploading our own content is permitted; synthetic-media disclosure is already set on every upload. |
 | 🟢 | All other libraries (SDKs, AWS S3, Whisper, sharp, React, etc.) | **Clear** | Permissive (MIT / Apache-2.0). Details in §4. |
 
-**Bottom line:** two unresolved blockers remain before monetized launch.
-**(1) Remotion:** confirm the automation license question with Remotion directly
+**Bottom line:** one unresolved blocker remains before monetized launch.
+**Remotion:** confirm the automation license question with Remotion directly
 (their docs are self-contradictory for the solo case); if it applies and $100/mo
-is unaffordable, migrating to a permissive renderer is a major project. **(2) The
-production LLM:** no free hosted tier is commercially compliant, so the realistic
-choices are self-hosting an Apache-2.0 model (free, but quality vs. our bar is
-unproven and must be trialed) or a cheap paid API. Both are cheaper to resolve
-now than after a strike or an audit. (Edge TTS — the third flag — is already
-removed.)
+is unaffordable, migrating to a permissive renderer is a major project. **The
+production LLM question is resolved for now:** Groq's free tier is both
+quality-qualified and commercially compliant regardless of payment status — see
+§3.2a. This was the exception, not the rule: every *other* free hosted tier
+remains prototyping-only (see the comparison table in §3.2), so if Groq ever
+stops qualifying or becomes unreachable, the fallback is still a funded DeepSeek
+balance or self-hosting an Apache-2.0 model, not another free API. (Edge TTS —
+the third flag — is already removed.)
 
 ---
 
@@ -51,12 +55,13 @@ removed.)
    before spending effort. If Automators genuinely applies and the $100/month
    minimum is unaffordable, the compliant escape is a **major** migration to a
    permissive renderer (Revideo, MIT). Don't migrate on spec. See §3.1.
-2. **Script/metadata LLM — no free hosted tier is compliant.** GitHub Models,
-   Mistral, Gemini, OpenRouter, and DeepSeek free tiers are all prototyping/
-   non-commercial (and most train on your data). The genuinely-free compliant
-   path is **self-hosting an Apache-2.0/MIT model** (Qwen2.5-14B) via the existing
-   OpenAI-compatible adapter — **but its quality against our strict bar is
-   unproven and must be trialed**. Otherwise a cheap **paid** API. See §3.2.
+2. **[RESOLVED for now] Script/metadata LLM — Groq's free tier is compliant
+   and qualified.** GitHub Models, Mistral, Gemini, OpenRouter, and DeepSeek
+   free tiers are still all prototyping/non-commercial (and most train on your
+   data) — Groq is the one exception, confirmed via its own Services
+   Agreement. Set as primary in `registry.ts` 2026-08. Still fact-check
+   generated scripts before publishing — passing validation isn't the same as
+   being fact-checked. See §3.2a.
 3. **[DONE] Deleted the Edge TTS engine + voices** — unlicensed for commercial
    use and blocked on datacenter IPs; Kokoro is the sole production TTS. See §3.3.
 4. **Adopt the stock-media editorial rules** (§3.4) in `media-sourcing` and keep
@@ -125,39 +130,61 @@ disagree:**
 Verify current numbers/terms at <https://www.remotion.pro/license> and
 <https://www.remotion.dev/docs/license/faq>.
 
-### 3.2 🔴 GitHub Models free tier — prototyping only
+### 3.2 ✅ GitHub Models — retired 2026-07-30, no longer relevant either way
 
-GitHub's documentation is explicit: *"you can use GitHub Models to find and
-experiment with AI models for free. Once you are ready to bring your application
-to production, [opt in to paid usage]."* The free tier is scoped to
-experimentation/prototyping; the 8K-in/4K-out limits reinforce that. Using it as
-the **production** script/metadata generator for a monetized channel is outside
-its intended terms.
+**Update 2026-08:** GitHub fully shut GitHub Models down on 2026-07-30 — the
+playground, model catalog, inference API, and BYOK are gone entirely, for
+every customer, not just this project. The "pay-as-you-go" option mentioned
+below no longer exists either; there is no paid tier to opt into anymore.
+`github-models` is marked permanently `disabledReason` in
+`services/script-generator/src/providers/registry.ts` — kept in the catalog
+only so the historical qualification result below isn't lost. This whole
+section is now a historical record of why it was disqualified on terms
+*before* it stopped existing at all — left in place because the reasoning
+(free tiers ≠ production rights) still applies to every other provider below.
 
-This matters most because GitHub Models `gpt-4o` is our **primary** script
-provider (and the metadata generator uses "the same LLM").
+**The original concern, for the record:** GitHub's documentation had been
+explicit: *"you can use GitHub Models to find and experiment with AI models
+for free. Once you are ready to bring your application to production, [opt in
+to paid usage]."* The free tier was scoped to experimentation/prototyping; the
+8K-in/4K-out limits reinforced that. Using it as the **production**
+script/metadata generator for a monetized channel was outside its intended
+terms even while it existed.
 
-**Is any FREE hosted tier both compliant and good enough? Verified (2026-07-24):**
-No — the major free API tiers are uniformly scoped to prototyping/non-commercial
-use, and most also train on your inputs:
+GitHub Models `gpt-4o` **was** our primary script provider (and the metadata
+generator used "the same LLM") until it was permanently retired.
+
+**Is any FREE hosted tier both compliant and good enough? Verified (2026-07-24,
+updated 2026-08 for Groq):** One exception — Groq. Every other major free API
+tier remains scoped to prototyping/non-commercial use, and most also train on
+your inputs:
 
 | Free tier | Commercial production? | Trains on your data? | Verdict |
 |---|---|---|---|
-| GitHub Models | ❌ *"experiment… once you are ready to bring your application to production, opt in to paid usage"* | — | prototyping only |
+| **Groq** (`openai/gpt-oss-120b`) | ✅ Services Agreement §8.1: customer owns Inputs/Outputs, not tier-gated | Not addressed in the privacy policy as tier-differentiated; no ToS clause claims training rights over outputs the way Mistral/Gemini's free tiers do | **compliant — see §3.2a** |
+| GitHub Models | ❌ *"experiment… once you are ready to bring your application to production, opt in to paid usage"* | — | **retired 2026-07-30 — moot, no tier of any kind exists anymore** |
 | Mistral "Experiment" (free) | ❌ evaluation/prototyping, "not production" | ⚠️ yes on free; opt-out only on paid | not compliant |
 | Google Gemini (free) | ❌ sources: not for revenue-generating use | ⚠️ yes on free (opt-out); paid/Vertex don't | not compliant |
 | OpenRouter `:free` models | ❌ "not recommended for production"; per-provider terms vary | ⚠️ some providers train on inputs | not compliant/unreliable |
 | DeepSeek API (free) | ❌ "restricted to personal, academic, or non-commercial projects" | ⚠️ yes | not compliant (paid tier is commercial) |
 
-So the free hosted route is a dead end for a monetized product. Note Mistral
-*passed our quality bar* (the-explainer 428–455 words) and only failed on rate
-limits — but its **free** terms are prototyping-only regardless, so throttling it
-would not make it compliant. That leaves three real options:
+So the free hosted route was a dead end for a monetized product **until Groq's
+terms were checked directly** — see §3.2a for the full writeup, including why
+this doesn't mean "any free tier is fine" (it's still the one exception, not a
+new pattern). Note Mistral *also passed part of our quality bar* (the-explainer
+428–455 words in one run, but not reliably — see registry.ts) and only failed
+on rate limits/verbatim-lifting in others — but its **free** terms are
+prototyping-only regardless, so fixing the quality issue would not make it
+compliant. If Groq ever stops qualifying, these remain the fallback options:
 
-- **Path A — pay per use (cheap).** DeepSeek **paid** (~$0.14/1M output) or
-  GitHub Models **pay-as-you-go** or **Anthropic Claude** (`claude-opus-4-8`,
+- **Path A — pay per use (cheap).** DeepSeek **paid** (~$0.14/1M output —
+  registered in `registry.ts` 2026-08, blocked on a funded account balance
+  as of writing; a $0.00-balance key returns `402 Insufficient Balance`
+  before ever reaching generation) or **Anthropic Claude** (`claude-opus-4-8`,
   already ranked first when `ANTHROPIC_API_KEY` is set; ~$0.10–0.15/script,
-  highest quality). Our multi-provider registry makes this a config change.
+  highest quality). GitHub Models' pay-as-you-go tier is no longer an option
+  — the entire service, free and paid, was retired 2026-07-30. Our
+  multi-provider registry makes any of these a config change, not a rewrite.
 - **Path B — self-host an open-weight model (genuinely free + clean, the Kokoro
   playbook).** An **Apache-2.0 / MIT** model's *weights license* grants
   commercial use of its outputs with no ToS and no per-call cost. Best CPU-viable
@@ -178,16 +205,75 @@ would not make it compliant. That leaves three real options:
     **may** fail novelty/insight consistently. **Unproven — it must be measured,
     not assumed.**
 
-**Recommendation:** since paying isn't currently an option, **run an empirical
-trial of Path B before committing**: install Ollama, pull `qwen2.5:14b-instruct`
-(Apache-2.0), add a `local` provider entry pointing the OpenAI-compatible adapter
-at `http://localhost:11434/v1`, and run `qualify-providers.mts` against the same
-strict bar. If it passes → we have a compliant, free, zero-ToS primary that runs
-on the render VM like Kokoro. **If it does not pass, the honest conclusion is
-that free-and-compliant-and-good-enough does not currently exist**, and the
-channel needs either a cheap paid API (Path A) or better self-host hardware
-(a 32B model / a GPU). I will not recommend shipping a free tier whose terms
-forbid it, nor claim a small CPU model matches gpt-4o without measuring it.
+**Recommendation (superseded for now by §3.2a):** the Path A/B analysis above
+was written when no free tier was believed compliant. That premise turned out
+to be wrong for one provider — Groq — so Path A/B are demoted to "what we'd do
+if Groq stops working," not the active plan. Kept here rather than deleted
+because the reasoning (self-host quality is unproven; DeepSeek needs funding)
+is still accurate and will matter again if Groq's status changes.
+
+### 3.2a ✅ Groq — free tier is commercially compliant AND qualified (2026-08)
+
+**Update 2026-08:** re-investigated Groq specifically because a length failure
+measured in an earlier pass (94–196 words/segment, well under every bracket's
+floor) turned out to be an artifact of *how* the pipeline was calling it, not a
+model or licensing limitation — worth checking on its own terms rather than
+leaving it disabled on stale evidence.
+
+**Licensing — verified directly against Groq's own agreement, not a summary:**
+[Groq's Services Agreement](https://console.groq.com/docs/legal/services-agreement)
+§8.1: *"Customer retains all Intellectual Property Rights in Customer Data
+(including in Inputs and Outputs)."* Critically, unlike Mistral/Gemini/
+OpenRouter/DeepSeek's free tiers, **this is not conditioned on payment status**
+— the same clause applies whether or not the account has billing configured.
+The one obligation, §6.3(f), is not stripping AI-provenance/disclosure markers
+from outputs — already satisfied by this pipeline's synthetic-media disclosure
+on every YouTube upload. No clause restricts free-tier use to
+prototyping/evaluation the way every other provider in the table above does.
+
+**Quality — re-measured against the current (two-phase) architecture, not the
+architecture that produced the original disabled-reason:** the 94–196
+words/segment failure predates commit `672d3b6` (two-phase per-segment
+generation). Before that rewrite, every provider's single-JSON-call-for-all-
+segments approach rationed output budget across every field and under-wrote by
+roughly 2x — this was never specific to Groq. Re-tested post-rewrite with
+`openai/gpt-oss-120b`:
+
+| Structure | Result | Time | Words/segment (band) |
+|---|---|---|---|
+| rapid-wire | PASS | 164s | 201-238 (180-320) |
+| the-explainer | PASS | 127s | 354-397 (330-520) |
+| the-explainer (re-run) | PASS | 144s | 383-493 (330-520) |
+
+Both brackets clear on the identical validation bar every other provider is
+held to (novelty, verbatim-lifting, insight-groundedness, word count). One
+operational detail worth knowing: `gpt-oss-120b` is a **reasoning model** —
+Groq's API returns its chain-of-thought in a separate `reasoning` field, which
+consumes token budget before any visible `content` is written. This is the
+actual mechanism behind the old under-length failures (reasoning ate most of
+the ceiling, leaving too little for content), not something the two-phase
+rewrite fixes on its own — it just means the ceiling (`maxOutputTokens: 5500`
+in `registry.ts`) has to leave headroom for it, same as it always did.
+
+**What this does NOT resolve — read before trusting output blindly:** passing
+the mechanical validation bar checks *overlap with the sources* (is this too
+close to verbatim, is there a grounded insight sentence), not *truth*. Reading
+actual generated prose against the qualification fixture's source summaries
+found the same fact-invention pattern already documented for DeepSeek and
+Mistral in this file: one run stated the EU's 2030 emissions target as "a
+forty-five percent cut," a specific figure that appears nowhere in the source
+summaries and is inconsistent with the real Fit-for-55 target (55%). This is a
+**quality/trust risk, not a licensing one** — every free/cheap provider tested
+in this project does this to some degree. Treat it the same way regardless of
+provider: fact-check generated scripts against `trend.json`'s `sourceSummaries`
+before publishing, don't assume "passed qualify-providers.mts" means
+"factually accurate."
+
+**Status:** set as `rank: 1` (primary) in `registry.ts`, `productionUse:
+"permitted"`, `disabledReason` removed. DeepSeek stays ranked above it for
+when it's funded, since DeepSeek's actual quality against this bar has never
+been measured (every attempt so far has been a $0-balance 402) — promoting it
+back above Groq should wait for a real qualification run, not assumption.
 
 ### 3.3 🟡→ delete Edge TTS
 
@@ -346,8 +432,10 @@ states *"This model is not available on Together's Serverless API."*
 | Service | Role | Commercial / monetization | Notes |
 |---|---|---|---|
 | **Remotion (Automators)** | Rendering | ⚠️ **paid license required** | §3.1. |
-| **GitHub Models (free)** | Script + metadata LLM | ❌ **prototyping only** | §3.2 — switch to paid/other for prod. |
-| **Anthropic Claude** | LLM (paid) | ✅ | Commercial use permitted; you retain rights to outputs. Highest-quality path. |
+| **Groq** | Script LLM (free, current primary) | ✅ | §3.2a — Services Agreement grants IP ownership of outputs regardless of tier; the one free hosted tier found to be compliant. Fact-check output before publishing — the concern here is invented statistics, not licensing. |
+| **GitHub Models** | Was script + metadata LLM | N/A — **retired 2026-07-30** | §3.2 — service no longer exists at all, free or paid; not a licensing question anymore. |
+| **Anthropic Claude** | LLM (paid) | ✅ | Commercial use permitted; you retain rights to outputs. Highest-quality path; currently unfunded (no `ANTHROPIC_API_KEY`). |
+| **DeepSeek** | LLM (paid) | ✅ | Commercial use permitted on the paid tier — see §3.2. Registered but currently $0 balance; ranked above Groq for when funded and re-qualified. |
 | **Google Gemini (AI Studio free)** | LLM fallback | ⚠️ avoid in prod | Free tier lets Google use your data; not for production. Paid tier has protections. Currently disabled in our chain. |
 | **Cerebras / Mistral / OpenRouter (free)** | LLM fallbacks | ⚠️ check per-provider | Disabled in our chain today; if enabled, verify each free tier permits commercial production before relying on it. |
 | **Firecrawl** | Trend research (scraping) | ✅ service; ⚠️ source copyright | §1 — extract facts, never reproduce article text. |
@@ -366,12 +454,15 @@ states *"This model is not available on Together's Serverless API."*
   commercial use — no voice-likeness or attribution strings attached. This is the
   cleanest AI component in the stack and a key reason it's the primary TTS.
 - **LLM outputs (script/metadata):** commercial ownership of outputs depends on
-  the **provider** used, not the SDK. Anthropic (paid) and OpenAI/Azure (paid)
-  grant you rights to outputs for commercial use. The *content* obligation is
-  ours: the script must add original insight and not reproduce source text — the
-  reason the `script-generator` verbatim/novelty/insight checks exist (see
-  `services/script-generator/README.md`). This is both a monetization-policy and
-  a copyright safeguard.
+  the **provider** used, not the SDK. Anthropic (paid), DeepSeek (paid), and
+  Groq (free — the one free-tier exception, §3.2a) grant you rights to outputs
+  for commercial use. The *content* obligation is ours: the script must add
+  original insight and not reproduce source text — the reason the
+  `script-generator` verbatim/novelty/insight checks exist (see
+  `services/script-generator/README.md`). This is both a monetization-policy
+  and a copyright safeguard — and separately from either, generated content
+  should be fact-checked against `sourceSummaries` before publishing, since the
+  validation checks don't catch invented statistics (see §3.2a's caveat).
 - **Whisper (captions):** transcribing our *own* synthetic audio — no third-party
   rights involved.
 - **YouTube synthetic-media disclosure:** set on every upload from
@@ -384,9 +475,20 @@ states *"This model is not available on Together's Serverless API."*
 
 - Remotion license / automation rule: <https://www.remotion.dev/docs/license/faq>,
   <https://www.remotion.pro/license>, <https://www.remotion.dev/docs/license/pricing>
-- GitHub Models scope (prototyping vs production):
+- GitHub Models scope (prototyping vs production, historical — service now retired):
   <https://docs.github.com/en/github-models/use-github-models/prototyping-with-ai-models>,
   <https://github.blog/changelog/2025-06-24-github-models-now-supports-moving-beyond-free-limits/>
+- GitHub Models retirement (2026-07-30), confirmed 2026-08-04: the docs page
+  above now states the service "has been fully retired" and directs to
+  Azure AI Foundry / GitHub Copilot instead; <https://github.blog/changelog/>
+  confirms the shutdown date with a 2026-07-01 advance notice.
+- Groq Services Agreement, checked directly 2026-08:
+  <https://console.groq.com/docs/legal/services-agreement> — §8.1 (customer IP
+  ownership of Inputs/Outputs, not tier-gated), §6.3(f) (AI-provenance
+  disclosure must be preserved). Privacy policy checked separately:
+  <https://groq.com/privacy-policy/> — does not address free-vs-paid training
+  usage directly; the Services Agreement's data-processing terms govern
+  customer data instead.
 - Pexels license: <https://www.pexels.com/license/>,
   <https://help.pexels.com/hc/en-us/articles/900005880463>
 - Pixabay content license: <https://pixabay.com/service/license-summary/>,

@@ -40,14 +40,14 @@ export async function runRender(
     // it is sticky per job, so a targeted re-render can't silently re-skin the
     // video and invalidate the chunk cache it is about to reuse.
     const themeId = await resolveJobTheme(store, jobId, logger);
-    const { clipOverrides, style } = await resolveReviewOverrides(store, jobId);
-    const inputProps = buildInputProps(assets, { themeId, clipOverrides, style });
+    const { clipOverrides, style, resolution } = await resolveReviewOverrides(store, jobId);
+    const inputProps = buildInputProps(assets, { themeId, clipOverrides, style, resolution });
     const { changedSegmentIds } = options;
 
-    if (clipOverrides.length > 0 || Object.keys(style).length > 0) {
+    if (clipOverrides.length > 0 || Object.keys(style).length > 0 || resolution) {
       logger.info(
-        { jobId, clipOverrides: clipOverrides.map((o) => o.segmentId), styleKeys: Object.keys(style) },
-        "Applied review-dashboard clip/style overrides",
+        { jobId, clipOverrides: clipOverrides.map((o) => o.segmentId), styleKeys: Object.keys(style), resolution },
+        "Applied review-dashboard clip/style/resolution overrides",
       );
     }
 

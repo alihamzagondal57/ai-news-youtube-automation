@@ -2,6 +2,8 @@
 // release-on-approval.json and shared-error-handling.json and pushes them into
 // a running local n8n instance via its REST API. See _build-manual-mode.mjs
 // for the sibling manual-mode.json workflow and the same conventions.
+import { runStepViaGithubActions } from "./_workflow-helpers.mjs";
+
 const N8N_URL = process.env.N8N_URL || "http://127.0.0.1:5678";
 const EMAIL = "operator@localhost.local";
 const PASSWORD = "LocalOnly-Pipeline2026!";
@@ -77,15 +79,30 @@ function buildReleaseOnApproval() {
   });
   connect("Build: youtube-uploader", "job.json: youtube-uploader");
 
+  // Dispatched on GitHub Actions (08-upload-youtube.yml), not run locally —
+  // same reasoning as every step in _workflow-helpers.mjs's
+  // buildScriptGeneratorOnward: n8n only dispatches and polls. Needs a
+  // "Job Context"-named node upstream since runStepViaGithubActions reads
+  // the jobId from a node with that exact name; "Build: youtube-uploader"
+  // already carries it under .jobId, so it's aliased here rather than
+  // renamed (renaming would break the update-job.mts calls above/below that
+  // reference it by its real name).
   nodes.push({
-    parameters: { command: `=${CD} && npx tsx services/youtube-uploader/src/index.ts "{{ $('Build: youtube-uploader').first().json.jobId }}"` },
-    id: id("11111111", 4),
-    name: "Run youtube-uploader",
-    type: "n8n-nodes-base.executeCommand",
-    typeVersion: 1,
+    parameters: { mode: "runOnceForAllItems", jsCode: "return [{ json: { jobId: $('Build: youtube-uploader').first().json.jobId } }];" },
+    id: id("11111111", 9),
+    name: "Job Context",
+    type: "n8n-nodes-base.code",
+    typeVersion: 2,
     position: [660, 0],
   });
-  connect("job.json: youtube-uploader", "Run youtube-uploader");
+  connect("job.json: youtube-uploader", "Job Context");
+
+  const gUpload = runStepViaGithubActions(11111111, 10, "youtube-uploader", "08-upload-youtube.yml");
+  nodes.push(...gUpload.nodes);
+  Object.entries(gUpload.connections).forEach(([from, conn]) => {
+    connections[from] = conn;
+  });
+  connect("Job Context", gUpload.firstNodeName);
 
   nodes.push({
     parameters: {
@@ -102,7 +119,7 @@ function buildReleaseOnApproval() {
     typeVersion: 2,
     position: [880, 0],
   });
-  connect("Run youtube-uploader", "Build: completed");
+  connect(gUpload.lastNodeName, "Build: completed");
 
   nodes.push({
     parameters: { command: `=${CD} && npx tsx n8n/scripts/update-job.mts "{{ $json.updateJobB64 }}"` },

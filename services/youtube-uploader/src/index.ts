@@ -6,7 +6,7 @@ import type { youtube_v3 } from "googleapis";
 import { createYoutubeClient } from "./auth.js";
 import { config } from "./config.js";
 import { QUOTA_COSTS } from "./quota.js";
-import { addToPlaylist, setThumbnail, uploadVideo } from "./youtube.js";
+import { addToPlaylist, assertVideoState, setThumbnail, uploadVideo } from "./youtube.js";
 
 export interface RunYoutubeUploadOptions {
   /**
@@ -76,6 +76,12 @@ export async function runYoutubeUpload(jobId: string, options: RunYoutubeUploadO
         quotaUnitsUsed += QUOTA_COSTS.playlistItemsInsert;
         logger.info({ jobId, videoId, playlistId: config.playlistId }, "Added to playlist");
       }
+
+      // See assertVideoState()'s doc comment — insert-time status is not
+      // trustworthy on its own; this re-asserts it and watches for drift.
+      const asserted = await assertVideoState(client, videoId, uploaded.status);
+      quotaUnitsUsed += asserted.correctionsApplied * QUOTA_COSTS.videosUpdate + asserted.listCallsMade * QUOTA_COSTS.videosList;
+      logger.info({ jobId, videoId, correctionsApplied: asserted.correctionsApplied }, "Asserted post-upload video state");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const failed = youtubeResultSchema.parse({

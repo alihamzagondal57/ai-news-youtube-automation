@@ -59,6 +59,8 @@ export interface SegmentDetail {
   currentClip: ClipSource | null;
   /** Every other known clip for this segment (offered by media-sourcing, or the clip an override moved out of the primary slot), each swappable in. */
   alternatives: ClipSource[];
+  /** Mechanical fact-check output from script-generator (see services/script-generator/src/factCheck.ts) — numbers/dates not found in the sources. Advisory only; empty when nothing was flagged. */
+  factCheckWarnings: string[];
 }
 
 export interface JobDetail {
@@ -128,6 +130,7 @@ export async function getJobDetail(store: JobStore, jobId: string): Promise<JobD
         endSeconds: timing?.endSeconds ?? 0,
         currentClip,
         alternatives,
+        factCheckWarnings: segment.factCheckWarnings ?? [],
       };
     }),
   );

@@ -30,13 +30,20 @@
               "fieldLabel": "Source URLs (one per line)",
               "fieldName": "sourceUrls",
               "fieldType": "textarea",
-              "requiredField": true
+              "requiredField": false
             },
             {
               "fieldLabel": "Source Summaries (one per line)",
               "fieldName": "sourceSummaries",
               "fieldType": "textarea",
-              "requiredField": true
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "Resolution (480p/720p/1080p/2k/4k)",
+              "fieldName": "resolution",
+              "fieldType": "text",
+              "placeholder": "1080p",
+              "requiredField": false
             }
           ]
         }
@@ -47,14 +54,31 @@
       "typeVersion": 2.2,
       "position": [
         0,
-        0
+        -120
       ],
       "webhookId": "manual-mode-start"
     },
     {
       "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-mode-start-api",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "00000001-0000-0000-0000-000000000006",
+      "name": "On webhook submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        120
+      ],
+      "webhookId": "manual-mode-start-api"
+    },
+    {
+      "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "function uuidv4() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\nconst f = $input.first().json;\nconst jobId = uuidv4();\nconst niche = (f.niche || 'news-europe').trim();\nconst sourceUrls = String(f.sourceUrls || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst sourceSummaries = String(f.sourceSummaries || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst trend = { jobId, topic: f.topic, angle: f.angle, sourceUrls, sourceSummaries };\nfunction b64(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64'); }\nreturn [{ json: { jobId, niche, topic: f.topic, angle: f.angle, trendB64: b64(trend) } }];"
+        "jsCode": "function uuidv4() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\nconst raw = $input.first().json;\nconst f = raw.body ?? raw;\nconst jobId = f.jobId || uuidv4();\nconst niche = (f.niche || 'news-europe').trim();\nconst sourceUrls = String(f.sourceUrls || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst sourceSummaries = String(f.sourceSummaries || '').split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\nconst trend = { jobId, topic: f.topic, angle: f.angle || f.topic, sourceUrls, sourceSummaries };\nconst RESOLUTION_PRESETS = {'480p':{width:854,height:480},'720p':{width:1280,height:720},'1080p':{width:1920,height:1080},'2k':{width:2560,height:1440},'4k':{width:3840,height:2160}};\nconst resolution = RESOLUTION_PRESETS[String(f.resolution || '1080p').trim().toLowerCase()] || RESOLUTION_PRESETS['1080p'];\nfunction b64(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64'); }\nreturn [{ json: { jobId, niche, topic: f.topic, angle: f.angle || f.topic, trendB64: b64(trend), reviewStateB64: b64({ jobId, resolution }) } }];"
       },
       "id": "00000001-0000-0000-0000-000000000002",
       "name": "Job Context",
@@ -75,6 +99,32 @@
       "typeVersion": 1,
       "position": [
         440,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/write-review-state.mts \"{{ $json.reviewStateB64 }}\""
+      },
+      "id": "00000001-0000-0000-0000-000000000007",
+      "name": "Write review-state.json",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        440,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "00000001-0000-0000-0000-000000000008",
+      "name": "Job seeded",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        660,
         0
       ]
     },
@@ -107,11 +157,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/script-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/02-generate-script.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
       "id": "00000002-0000-0000-0000-000000000003",
-      "name": "Run script-generator",
-      "type": "n8n-nodes-base.executeCommand",
+      "name": "Dispatch: script-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000004",
+      "name": "Stamp: script-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000005",
+      "name": "Wait: script-generator",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/02-generate-script.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000006",
+      "name": "Find run: script-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: script-generator').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000007",
+      "name": "Eval run: script-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000008",
+      "name": "Still waiting? script-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000009",
+      "name": "Succeeded? script-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"script-generator\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000010",
+      "name": "Failed: script-generator",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -123,7 +343,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'voiceover', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000004",
+      "id": "00000002-0000-0000-0000-000000000011",
       "name": "Build: voiceover",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -136,7 +356,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000005",
+      "id": "00000002-0000-0000-0000-000000000012",
       "name": "job.json: voiceover",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -147,11 +367,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/voiceover/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/03-generate-voiceover.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000006",
-      "name": "Run voiceover",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "00000002-0000-0000-0000-000000000013",
+      "name": "Dispatch: voiceover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000014",
+      "name": "Stamp: voiceover",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000015",
+      "name": "Wait: voiceover",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/03-generate-voiceover.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000016",
+      "name": "Find run: voiceover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: voiceover').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000017",
+      "name": "Eval run: voiceover",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000018",
+      "name": "Still waiting? voiceover",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000019",
+      "name": "Succeeded? voiceover",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"voiceover\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000020",
+      "name": "Failed: voiceover",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -163,7 +553,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'caption-sync', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000007",
+      "id": "00000002-0000-0000-0000-000000000021",
       "name": "Build: caption-sync",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -176,7 +566,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000008",
+      "id": "00000002-0000-0000-0000-000000000022",
       "name": "job.json: caption-sync",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -187,11 +577,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/caption-sync/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/04-generate-captions.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000009",
-      "name": "Run caption-sync",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "00000002-0000-0000-0000-000000000023",
+      "name": "Dispatch: caption-sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000024",
+      "name": "Stamp: caption-sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000025",
+      "name": "Wait: caption-sync",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/04-generate-captions.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000026",
+      "name": "Find run: caption-sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: caption-sync').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000027",
+      "name": "Eval run: caption-sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000028",
+      "name": "Still waiting? caption-sync",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000029",
+      "name": "Succeeded? caption-sync",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"caption-sync\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000030",
+      "name": "Failed: caption-sync",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -200,11 +760,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/media-sourcing/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/05-source-media.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000010",
-      "name": "Run media-sourcing",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "00000002-0000-0000-0000-000000000031",
+      "name": "Dispatch: media-sourcing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000032",
+      "name": "Stamp: media-sourcing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000033",
+      "name": "Wait: media-sourcing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/05-source-media.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000034",
+      "name": "Find run: media-sourcing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: media-sourcing').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000035",
+      "name": "Eval run: media-sourcing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000036",
+      "name": "Still waiting? media-sourcing",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000037",
+      "name": "Succeeded? media-sourcing",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"media-sourcing\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000038",
+      "name": "Failed: media-sourcing",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -215,7 +945,7 @@
       "parameters": {
         "mode": "append"
       },
-      "id": "00000002-0000-0000-0000-000000000011",
+      "id": "00000002-0000-0000-0000-000000000039",
       "name": "Voice+captions and media ready",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
@@ -229,7 +959,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'metadata-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000012",
+      "id": "00000002-0000-0000-0000-000000000040",
       "name": "Build: metadata-generator",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -242,7 +972,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000013",
+      "id": "00000002-0000-0000-0000-000000000041",
       "name": "job.json: metadata-generator",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -253,11 +983,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/metadata-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/06-generate-metadata.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000014",
-      "name": "Run metadata-generator",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "00000002-0000-0000-0000-000000000042",
+      "name": "Dispatch: metadata-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000043",
+      "name": "Stamp: metadata-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000044",
+      "name": "Wait: metadata-generator",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/06-generate-metadata.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000045",
+      "name": "Find run: metadata-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: metadata-generator').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000046",
+      "name": "Eval run: metadata-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000047",
+      "name": "Still waiting? metadata-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000048",
+      "name": "Succeeded? metadata-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"metadata-generator\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000049",
+      "name": "Failed: metadata-generator",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -269,7 +1169,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'render', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000015",
+      "id": "00000002-0000-0000-0000-000000000050",
       "name": "Build: render",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -282,7 +1182,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000016",
+      "id": "00000002-0000-0000-0000-000000000051",
       "name": "job.json: render",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -294,23 +1194,31 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.RENDER_SERVER_URL || 'http://127.0.0.1:8080' }}/render",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/07-trigger-render.yml/dispatches",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.RENDER_SERVER_SHARED_SECRET }}"
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ jobId: $('Job Context').first().json.jobId }) }}",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
         "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000017",
-      "name": "Start render",
+      "id": "00000002-0000-0000-0000-000000000052",
+      "name": "Dispatch: render",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -320,12 +1228,26 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000053",
+      "name": "Stamp: render",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "resume": "timeInterval",
         "unit": "seconds",
-        "amount": 8
+        "amount": 15
       },
-      "id": "00000002-0000-0000-0000-000000000018",
-      "name": "Poll delay",
+      "id": "00000002-0000-0000-0000-000000000054",
+      "name": "Wait: render",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
@@ -336,20 +1258,28 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.RENDER_SERVER_URL || 'http://127.0.0.1:8080' }}/jobs/{{ $('Job Context').first().json.jobId }}",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/07-trigger-render.yml/runs?event=workflow_dispatch&per_page=5",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "=Bearer {{ $env.RENDER_SERVER_SHARED_SECRET }}"
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
             }
           ]
         },
         "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000019",
-      "name": "Check render status",
+      "id": "00000002-0000-0000-0000-000000000055",
+      "name": "Find run: render",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -359,6 +1289,20 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: render').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000056",
+      "name": "Eval run: render",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -367,19 +1311,19 @@
           },
           "conditions": [
             {
-              "leftValue": "={{ $json.status }}",
-              "rightValue": "running",
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
               "operator": {
-                "type": "string",
-                "operation": "equals"
+                "type": "boolean",
+                "operation": "equal"
               }
             }
           ],
           "combinator": "and"
         }
       },
-      "id": "00000002-0000-0000-0000-000000000020",
-      "name": "Still rendering?",
+      "id": "00000002-0000-0000-0000-000000000057",
+      "name": "Still waiting? render",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
@@ -397,19 +1341,19 @@
           },
           "conditions": [
             {
-              "leftValue": "={{ $json.status }}",
-              "rightValue": "failed",
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
               "operator": {
-                "type": "string",
-                "operation": "equals"
+                "type": "boolean",
+                "operation": "equal"
               }
             }
           ],
           "combinator": "and"
         }
       },
-      "id": "00000002-0000-0000-0000-000000000021",
-      "name": "Render failed?",
+      "id": "00000002-0000-0000-0000-000000000058",
+      "name": "Succeeded? render",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
@@ -419,10 +1363,10 @@
     },
     {
       "parameters": {
-        "errorMessage": "={{ 'render-server reported: ' + ($json.error || $json.result?.error || 'unknown render failure') }}"
+        "errorMessage": "=GitHub Actions run for \"render\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
       },
-      "id": "00000002-0000-0000-0000-000000000022",
-      "name": "Fail on render error",
+      "id": "00000002-0000-0000-0000-000000000059",
+      "name": "Failed: render",
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
@@ -435,7 +1379,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'thumbnail-generator', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000023",
+      "id": "00000002-0000-0000-0000-000000000060",
       "name": "Build: thumbnail-generator",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -448,7 +1392,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000024",
+      "id": "00000002-0000-0000-0000-000000000061",
       "name": "job.json: thumbnail-generator",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -459,11 +1403,181 @@
     },
     {
       "parameters": {
-        "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx services/thumbnail-generator/src/index.ts \"{{ $('Job Context').first().json.jobId }}\""
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/07b-generate-thumbnail.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'master', inputs: { jobId: $('Job Context').first().json.jobId } }) }}",
+        "options": {}
       },
-      "id": "00000002-0000-0000-0000-000000000025",
-      "name": "Run thumbnail-generator",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "00000002-0000-0000-0000-000000000062",
+      "name": "Dispatch: thumbnail-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { dispatchedAt: new Date().toISOString() } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000063",
+      "name": "Stamp: thumbnail-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 15
+      },
+      "id": "00000002-0000-0000-0000-000000000064",
+      "name": "Wait: thumbnail-generator",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/actions/workflows/07b-generate-thumbnail.yml/runs?event=workflow_dispatch&per_page=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000002-0000-0000-0000-000000000065",
+      "name": "Find run: thumbnail-generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const dispatchedAt = new Date($('Stamp: thumbnail-generator').first().json.dispatchedAt).getTime();\nconst runs = ($json.workflow_runs || []).filter(r => new Date(r.created_at).getTime() >= dispatchedAt - 5000);\nruns.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst run = runs[0] || null;\nconst stillWaiting = !run || run.status !== 'completed';\nconst succeeded = !!run && run.status === 'completed' && run.conclusion === 'success';\nreturn [{ json: { stillWaiting, succeeded, runId: run ? run.id : null, htmlUrl: run ? run.html_url : null, conclusion: run ? run.conclusion : null } }];"
+      },
+      "id": "00000002-0000-0000-0000-000000000066",
+      "name": "Eval run: thumbnail-generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stillWaiting }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000067",
+      "name": "Still waiting? thumbnail-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.succeeded }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "00000002-0000-0000-0000-000000000068",
+      "name": "Succeeded? thumbnail-generator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=GitHub Actions run for \"thumbnail-generator\" did not succeed (conclusion: {{ $json.conclusion }}). See {{ $json.htmlUrl }}"
+      },
+      "id": "00000002-0000-0000-0000-000000000069",
+      "name": "Failed: thumbnail-generator",
+      "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
         0,
@@ -475,7 +1589,7 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const ctx = $('Job Context').first().json;\nconst payload = { jobId: ctx.jobId, mode: 'manual', status: 'running', currentStep: 'review', niche: ctx.niche };\nreturn [{ json: { ...ctx, updateJobB64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
       },
-      "id": "00000002-0000-0000-0000-000000000026",
+      "id": "00000002-0000-0000-0000-000000000070",
       "name": "Build: review (parked)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -488,7 +1602,7 @@
       "parameters": {
         "command": "=cd /d \"E:\\Youtube Ai Automation Agent\" && npx tsx n8n/scripts/update-job.mts \"{{ $json.updateJobB64 }}\""
       },
-      "id": "00000002-0000-0000-0000-000000000027",
+      "id": "00000002-0000-0000-0000-000000000071",
       "name": "job.json: review (parked)",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -510,6 +1624,17 @@
         ]
       ]
     },
+    "On webhook submission": {
+      "main": [
+        [
+          {
+            "node": "Job Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Job Context": {
       "main": [
         [
@@ -517,6 +1642,33 @@
             "node": "Write trend.json",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Write review-state.json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write trend.json": {
+      "main": [
+        [
+          {
+            "node": "Job seeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write review-state.json": {
+      "main": [
+        [
+          {
+            "node": "Job seeded",
+            "type": "main",
+            "index": 1
           }
         ]
       ]
@@ -532,7 +1684,7 @@
         ]
       ]
     },
-    "Write trend.json": {
+    "Job seeded": {
       "main": [
         [
           {
@@ -543,11 +1695,107 @@
         ]
       ]
     },
+    "Dispatch: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Stamp: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Find run: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Eval run: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: script-generator": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? script-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? script-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: voiceover",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Dispatch: media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: script-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "job.json: script-generator": {
       "main": [
         [
           {
-            "node": "Run script-generator",
+            "node": "Dispatch: script-generator",
             "type": "main",
             "index": 0
           }
@@ -565,16 +1813,91 @@
         ]
       ]
     },
-    "Run script-generator": {
+    "Dispatch: voiceover": {
       "main": [
         [
           {
-            "node": "Build: voiceover",
+            "node": "Stamp: voiceover",
             "type": "main",
             "index": 0
-          },
+          }
+        ]
+      ]
+    },
+    "Stamp: voiceover": {
+      "main": [
+        [
           {
-            "node": "Run media-sourcing",
+            "node": "Wait: voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: voiceover": {
+      "main": [
+        [
+          {
+            "node": "Find run: voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: voiceover": {
+      "main": [
+        [
+          {
+            "node": "Eval run: voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: voiceover": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? voiceover": {
+      "main": [
+        [
+          {
+            "node": "Wait: voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? voiceover": {
+      "main": [
+        [
+          {
+            "node": "Build: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: voiceover",
             "type": "main",
             "index": 0
           }
@@ -585,7 +1908,7 @@
       "main": [
         [
           {
-            "node": "Run voiceover",
+            "node": "Dispatch: voiceover",
             "type": "main",
             "index": 0
           }
@@ -603,11 +1926,91 @@
         ]
       ]
     },
-    "Run voiceover": {
+    "Dispatch: caption-sync": {
       "main": [
         [
           {
-            "node": "Build: caption-sync",
+            "node": "Stamp: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Wait: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Find run: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Eval run: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Wait: caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? caption-sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? caption-sync": {
+      "main": [
+        [
+          {
+            "node": "Voice+captions and media ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: caption-sync",
             "type": "main",
             "index": 0
           }
@@ -618,30 +2021,98 @@
       "main": [
         [
           {
-            "node": "Run caption-sync",
+            "node": "Dispatch: caption-sync",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Run caption-sync": {
+    "Dispatch: media-sourcing": {
       "main": [
         [
           {
-            "node": "Voice+captions and media ready",
+            "node": "Stamp: media-sourcing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Run media-sourcing": {
+    "Stamp: media-sourcing": {
       "main": [
-        null,
+        [
+          {
+            "node": "Wait: media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: media-sourcing": {
+      "main": [
+        [
+          {
+            "node": "Find run: media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: media-sourcing": {
+      "main": [
+        [
+          {
+            "node": "Eval run: media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: media-sourcing": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? media-sourcing": {
+      "main": [
+        [
+          {
+            "node": "Wait: media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? media-sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? media-sourcing": {
+      "main": [
         [
           {
             "node": "Voice+captions and media ready",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Failed: media-sourcing",
             "type": "main",
             "index": 0
           }
@@ -670,11 +2141,102 @@
         ]
       ]
     },
+    "Dispatch: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Stamp: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Find run: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Eval run: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? metadata-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: render",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: metadata-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "job.json: metadata-generator": {
       "main": [
         [
           {
-            "node": "Run metadata-generator",
+            "node": "Dispatch: metadata-generator",
             "type": "main",
             "index": 0
           }
@@ -692,11 +2254,91 @@
         ]
       ]
     },
-    "Run metadata-generator": {
+    "Dispatch: render": {
       "main": [
         [
           {
-            "node": "Build: render",
+            "node": "Stamp: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp: render": {
+      "main": [
+        [
+          {
+            "node": "Wait: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: render": {
+      "main": [
+        [
+          {
+            "node": "Find run: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: render": {
+      "main": [
+        [
+          {
+            "node": "Eval run: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: render": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? render": {
+      "main": [
+        [
+          {
+            "node": "Wait: render",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? render": {
+      "main": [
+        [
+          {
+            "node": "Build: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: render",
             "type": "main",
             "index": 0
           }
@@ -707,76 +2349,7 @@
       "main": [
         [
           {
-            "node": "Start render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Start render": {
-      "main": [
-        [
-          {
-            "node": "Poll delay",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Poll delay": {
-      "main": [
-        [
-          {
-            "node": "Check render status",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check render status": {
-      "main": [
-        [
-          {
-            "node": "Still rendering?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Still rendering?": {
-      "main": [
-        [
-          {
-            "node": "Poll delay",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Render failed?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Render failed?": {
-      "main": [
-        [
-          {
-            "node": "Fail on render error",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Build: thumbnail-generator",
+            "node": "Dispatch: render",
             "type": "main",
             "index": 0
           }
@@ -794,11 +2367,102 @@
         ]
       ]
     },
+    "Dispatch: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Stamp: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Find run: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find run: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Eval run: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eval run: thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Still waiting? thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still waiting? thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Wait: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Succeeded? thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Succeeded? thumbnail-generator": {
+      "main": [
+        [
+          {
+            "node": "Build: review (parked)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed: thumbnail-generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "job.json: thumbnail-generator": {
       "main": [
         [
           {
-            "node": "Run thumbnail-generator",
+            "node": "Dispatch: thumbnail-generator",
             "type": "main",
             "index": 0
           }
@@ -810,17 +2474,6 @@
         [
           {
             "node": "job.json: review (parked)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Run thumbnail-generator": {
-      "main": [
-        [
-          {
-            "node": "Build: review (parked)",
             "type": "main",
             "index": 0
           }
