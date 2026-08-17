@@ -30,11 +30,20 @@ export async function listJobsAwaitingReview(store: JobStore): Promise<JobSummar
   const summaries: JobSummary[] = [];
   for (const manifest of manifests) {
     if (!manifest || manifest.currentStep !== "review") continue;
-    const script = await store.getJsonIfExists(store.jobKey(manifest.jobId, "script.json"), scriptSchema);
+    const [script, reviewState] = await Promise.all([
+      store.getJsonIfExists(store.jobKey(manifest.jobId, "script.json"), scriptSchema),
+      getReviewState(store, manifest.jobId),
+    ]);
     summaries.push({
       jobId: manifest.jobId,
       title: script?.title ?? "(untitled)",
-      status: manifest.status,
+      // manifest.status is the pipeline-run status (job.json) -- it never
+      // leaves "running" once the automated steps finish, since there's no
+      // terminal state for "parked at the human review gate". reviewState's
+      // status (review-state.json) is what actually reflects where the job
+      // is in the review workflow (awaiting-review / approved / rejected),
+      // same source the detail page already reads for its status badge.
+      status: reviewState.status,
       createdAt: manifest.createdAt,
       updatedAt: manifest.updatedAt,
     });
