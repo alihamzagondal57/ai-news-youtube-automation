@@ -77,6 +77,26 @@ const RESOLUTION_LABELS: Record<ResolutionPreset, string> = {
   "4k": "4K (3840×2160)",
 };
 
+/**
+ * Rough total-time estimate per resolution, shown on the New job screen.
+ * script (~5min) + voiceover (~10min) + captions (~2min) + media (~1min) +
+ * metadata (~1min) + thumbnail (~1min) is resolution-independent — only
+ * render scales with pixel count. The fixed-steps figure and the 1080p
+ * render figure are both real measurements from an actual end-to-end run on
+ * GitHub's shared runners (a ~14.5min video: ~26min of fixed steps, ~2h02m
+ * render). Every other resolution's render time is that 1080p figure scaled
+ * by pixel-count ratio (480p/720p/2K/4K vs 1080p's 1920×1080) — an
+ * extrapolation, not a separate measurement, since only 1080p has actually
+ * been timed end-to-end so far.
+ */
+const RESOLUTION_ESTIMATES: Record<ResolutionPreset, string> = {
+  "480p": "45 minutes – 1 hour",
+  "720p": "1 – 1.5 hours",
+  "1080p": "2 – 3 hours",
+  "2k": "3.5 – 5 hours",
+  "4k": "7 – 10 hours",
+};
+
 async function renderNewJobView(): Promise<void> {
   app.innerHTML = `
     <a href="#/" class="back-link">&larr; All jobs</a>
@@ -92,6 +112,7 @@ async function renderNewJobView(): Promise<void> {
             .join("")}
         </select>
       </div>
+      <div class="job-meta" id="new-job-estimate"></div>
       <div id="new-job-4k-warning" class="fact-check-warning" style="display:none">
         <span class="fact-check-warning-title">⚠ No render VM configured</span> — 4K will render locally on this machine's CPU, which is impractically slow. It will still work, just expect a long render.
       </div>
@@ -104,6 +125,7 @@ async function renderNewJobView(): Promise<void> {
 
   const resolutionSelect = document.getElementById("new-job-resolution") as HTMLSelectElement;
   const warning = document.getElementById("new-job-4k-warning")!;
+  const estimateEl = document.getElementById("new-job-estimate")!;
   const startBtn = document.getElementById("new-job-start-btn") as HTMLButtonElement;
   const statusEl = document.getElementById("new-job-status")!;
 
@@ -115,7 +137,11 @@ async function renderNewJobView(): Promise<void> {
   }
 
   const updateWarning = () => {
-    warning.style.display = resolutionSelect.value === "4k" && !hasRenderVm ? "block" : "none";
+    const resolution = resolutionSelect.value as ResolutionPreset;
+    warning.style.display = resolution === "4k" && !hasRenderVm ? "block" : "none";
+    estimateEl.textContent =
+      `Estimated: ${RESOLUTION_ESTIMATES[resolution]} (rough — actual time depends mainly on how long the ` +
+      `generated script turns out to be, which varies per topic)`;
   };
   resolutionSelect.addEventListener("change", updateWarning);
   updateWarning();
@@ -225,6 +251,21 @@ async function renderReviewView(jobId: string): Promise<void> {
             <button id="voice-preview-btn">Preview</button>
           </div>
           <audio id="voice-preview-audio" style="display:none"></audio>
+          <div class="fact-check-warning">
+            <span class="fact-check-warning-title">⚠ Changing voice does not re-render automatically</span> — the video
+            you see above still has the OLD voice until you manually re-run these GitHub Actions workflows, in
+            order, for this exact job ID (<code>${escapeHtml(job.jobId)}</code>), waiting for each to finish before
+            starting the next:
+            <ol style="margin:8px 0 0 20px; padding:0;">
+              <li><code>03 - Generate Voiceover</code></li>
+              <li><code>04 - Sync Captions</code></li>
+              <li><code>07 - Render</code></li>
+              <li><code>07b - Generate Thumbnail</code></li>
+            </ol>
+            On each workflow's page on GitHub, click <strong>Run workflow</strong>, paste the job ID above into the
+            box, then click the green <strong>Run workflow</strong> button. No coding or terminal needed — just
+            GitHub's own website. Refresh this page once thumbnail generation finishes to see the updated video.
+          </div>
         </div>
 
         <div class="panel">

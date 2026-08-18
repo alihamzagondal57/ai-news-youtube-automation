@@ -1,11 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { JobStore, createLogger, scriptSchema, type Logger, type Script } from "@ai-news/shared";
+import { JobStore, createLogger, scriptSchema, segmentTimingSchema, type Logger, type Script } from "@ai-news/shared";
 import { DEFAULT_THEME_ID } from "@ai-news/shared/theme";
 import { z } from "zod";
 import { config } from "./config.js";
-import { pickBestFrame, probeVideoDurationSeconds } from "./frame.js";
+import { pickBestFrame, probeVideoDurationSeconds, selectTopicalWindow, type TimeWindow } from "./frame.js";
 import { deriveThumbnailHeadline } from "./headline.js";
 import { generateTopicImage, type GenerateTopicImageResult } from "./imageGen.js";
 import { buildImagePrompt } from "./prompt.js";
@@ -50,6 +50,7 @@ async function resolveBackground(
   work: string,
   logger: Logger,
   generateImage: GenerateImageFn,
+  topicalWindow: TimeWindow | null,
 ): Promise<BackgroundResolution> {
   const prompt = buildImagePrompt(script);
   const generated = await generateImage(prompt, join(work, IMAGE_FILE));
@@ -67,10 +68,18 @@ async function resolveBackground(
     await store.downloadToFile(store.jobKey(jobId, "render.mp4"), videoPath);
 
     const durationSeconds = await probeVideoDurationSeconds(videoPath);
-    const best = await pickBestFrame(videoPath, durationSeconds, work, config.frame);
+    const best = await pickBestFrame(videoPath, durationSeconds, work, config.frame, topicalWindow ?? undefined);
 
     logger.info(
-      { jobId, timestampSeconds: Number(best.timestampSeconds.toFixed(2)), durationSeconds: Number(durationSeconds.toFixed(1)) },
+      {
+        jobId,
+        timestampSeconds: Number(best.timestampSeconds.toFixed(2)),
+        durationSeconds: Number(durationSeconds.toFixed(1)),
+        // Whether the candidate search was scoped to the segment whose text
+        // best matches the video's title (see selectTopicalWindow) or, absent
+        // usable timing data, spread across the whole video as before.
+        scopedToTopicalSegment: topicalWindow != null,
+      },
       "Picked most visually detailed candidate frame from render.mp4",
     );
     return { src: basename(best.outputPath), source: "video-frame" };
@@ -111,8 +120,15 @@ export async function runThumbnailGeneration(jobId: string, options: RunThumbnai
     const jobTheme = await store.getJsonIfExists(store.jobKey(jobId, "theme.json"), jobThemeSchema);
     const themeId = jobTheme?.themeId ?? DEFAULT_THEME_ID;
 
+    // Optional: segment-timing.json always exists by this point in the real
+    // pipeline (render depends on it), but getJsonIfExists rather than
+    // getJson so a missing/malformed file degrades to the old
+    // whole-video search instead of failing the job over a thumbnail nicety.
+    const segmentTiming = await store.getJsonIfExists(store.jobKey(jobId, "segment-timing.json"), segmentTimingSchema);
+    const topicalWindow = segmentTiming ? selectTopicalWindow(script, segmentTiming) : null;
+
     const { text: headline, fontSizePx } = deriveThumbnailHeadline(script);
-    const background = await resolveBackground(jobId, script, store, work, logger, generateImage);
+    const background = await resolveBackground(jobId, script, store, work, logger, generateImage, topicalWindow);
 
     const outputPath = join(work, "thumbnail.png");
     await renderThumbnailStill({
