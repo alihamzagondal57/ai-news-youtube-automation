@@ -88,13 +88,21 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     rank: 4,
     envKey: "GEMINI_API_KEY",
     modelEnvKey: "SCRIPT_GEMINI_MODEL",
-    // 2.5 Pro has by far the largest output ceiling of the free options, which
-    // is the constraint that eliminated llama-3.3-70b.
-    defaultModel: "gemini-2.5-pro",
+    // gemini-2.5-pro (and separately gemini-2.5-flash) both now 404 with
+    // "no longer available to new users" on this key -- confirmed live
+    // (2026-08-18) against Google's own generateContent endpoint, not just
+    // assumed from the model list, which still lists both as if they were
+    // reachable. Their suggested replacements are NOT interchangeable:
+    // gemini-3.1-pro-preview 429s with a real 0 free-tier quota (paid only),
+    // but gemini-3.6-flash genuinely works free with a 65,536-token output
+    // ceiling -- larger than 2.5 Pro's, not a downgrade. Re-check this
+    // service's actual reachability if it starts 404ing again; Google has
+    // now retired two model generations here within this project's lifetime.
+    defaultModel: "gemini-3.6-flash",
     maxOutputTokens: 16000,
     cost: "Free tier, no credit card",
     howToGetKey: "https://aistudio.google.com/app/apikey — sign in with a Google account, 'Create API key'. No billing setup required.",
-    notes: "Highest free output ceiling of the four; best candidate to actually clear the word budgets.",
+    notes: "Real free-tier ceiling is 65,536 output tokens; 16000 here is this project's own budget, not the model's limit.",
     // Free AI Studio tier: not for revenue-generating use, and Google may train
     // on free-tier inputs. Paid/Vertex is the commercial path.
     productionUse: "prototype-only",
