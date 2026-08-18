@@ -39,11 +39,17 @@ You don't need to do anything else — leave the tab open or close it, the job k
 
 ## 4. How auto mode works
 
-Auto mode runs by itself every day at a set time (06:00 by default) — it picks its own trending topic, then goes through the exact same steps as a manual job (script, voiceover, captions, media, metadata, render, thumbnail). You don't need to do anything for this to happen; it's already turned on.
+Auto mode is designed to run by itself every day at a set time (06:00 by default) — it picks its own trending topic, then goes through the exact same steps as a manual job (script, voiceover, captions, media, metadata, render, thumbnail).
 
-If you want to trigger it right now instead of waiting for the daily schedule:
+**As of 2026-08-18, this daily schedule is not actually turned on yet** — the workflow exists but hasn't been published in n8n, so nothing will happen on its own until you do this once:
 
 1. Open n8n at **http://localhost:5678** and log in (`operator@localhost.local` / `LocalOnly-Pipeline2026!` — this login only works from your own computer, it's not a real secret).
+2. Open the **Auto Mode - Full Pipeline** workflow.
+3. Click **Publish** near the top right. From then on, it fires automatically every day — you don't need to repeat this.
+
+To trigger a run right now instead of waiting for the daily schedule (works whether or not you've published it):
+
+1. Same login as above.
 2. Open the **Auto Mode - Full Pipeline** workflow.
 3. Click **Execute workflow** near the top.
 
@@ -84,5 +90,7 @@ Everything below was already configured for this project. You should never need 
 
 - **Cloudflare R2** (the shared storage every step reads/writes to) — bucket created, credentials saved in `.env` and as GitHub repo secrets.
 - **GitHub token** (`GITHUB_TOKEN` in `.env`) — lets n8n start GitHub Actions runs on your behalf.
-- **n8n workflows published** — both `Manual Mode - Full Pipeline` and `Auto Mode - Full Pipeline` are published in n8n so their triggers listen for jobs. If you ever edit one of these workflows yourself, click **Publish** again afterward or it'll stop working.
+- **YouTube upload credentials** (`YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`, `YOUTUBE_CHANNEL_ID`) — set as GitHub repo secrets so `08-upload-youtube.yml` can authenticate.
+- **Approval webhook** (`N8N_APPROVAL_WEBHOOK_URL` in `.env`) — tells review-dashboard's Approve button where to notify n8n. Without this, Approve only updates the dashboard's own record of the job and nothing actually uploads (this was broken until 2026-08-18 — see git history on this file's directory for the fix).
+- **n8n workflows published** — a workflow only listens for its trigger (webhook / schedule) while it shows **Active** in n8n. Currently published: `Manual Mode - Full Pipeline` and `Release on Approval`. **`Auto Mode - Full Pipeline` is NOT currently published** — its daily schedule will not fire until you open it in n8n and click **Publish**. If you ever edit any of these workflows yourself, click **Publish** again afterward or it'll stop working.
 - **Node.js, n8n, and project dependencies installed** on this computer — `start-pipeline.bat` assumes these are already in place; it starts things, it doesn't install them.
