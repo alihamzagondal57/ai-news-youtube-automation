@@ -35,10 +35,17 @@ async function renderJobList(): Promise<void> {
   app.innerHTML = `
     <header class="app-header">
       <h1>Jobs awaiting review</h1>
-      <a href="#/new" class="button-link">+ New job</a>
+      <div class="header-actions">
+        <div class="auto-mode-toggle">
+          <span>Auto mode</span>
+          <div class="switch" id="auto-mode-switch" title="Loading…"></div>
+        </div>
+        <a href="#/new" class="button-link">+ New job</a>
+      </div>
     </header>
     <div id="job-list-container">Loading…</div>
   `;
+  wireAutoModeToggle();
   const container = document.getElementById("job-list-container")!;
   try {
     const { jobs } = await api.listJobs();
@@ -66,6 +73,46 @@ async function renderJobList(): Promise<void> {
   } catch (err) {
     container.innerHTML = `<div class="empty-state">Failed to load jobs: ${escapeHtml((err as Error).message)}</div>`;
   }
+}
+
+function wireAutoModeToggle(): void {
+  const switchEl = document.getElementById("auto-mode-switch") as HTMLDivElement;
+  let current: boolean | null = null;
+  let busy = false;
+
+  const render = () => {
+    switchEl.classList.toggle("on", current === true);
+    switchEl.classList.toggle("disabled", busy || current === null);
+    switchEl.title =
+      current === null
+        ? "Could not reach n8n to check auto-mode's status"
+        : current
+          ? "Auto mode is ON — click to turn off"
+          : "Auto mode is OFF — click to turn on";
+  };
+
+  api
+    .getAutoModeStatus()
+    .then(({ active }) => {
+      current = active;
+      render();
+    })
+    .catch(() => render());
+
+  switchEl.addEventListener("click", async () => {
+    if (busy || current === null) return;
+    busy = true;
+    render();
+    try {
+      const { active } = await api.setAutoModeActive(!current);
+      current = active;
+    } catch (err) {
+      switchEl.title = `Failed to change auto-mode: ${(err as Error).message}`;
+    } finally {
+      busy = false;
+      render();
+    }
+  });
 }
 
 // ── New job ──────────────────────────────────────────────────────────────

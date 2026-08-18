@@ -46,4 +46,17 @@ export const config = {
    * nodes. Defaults to n8n's own default local port.
    */
   n8nManualModeWebhookUrl: process.env.N8N_MANUAL_MODE_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/manual-mode-start-api",
+
+  /**
+   * n8n's own REST management API (activate/deactivate a workflow) — used
+   * only by the Auto Mode on/off toggle (n8nAdmin.ts), which is the one
+   * dashboard feature that needs to actually manage a workflow rather than
+   * just call a webhook it exposes. Login, not an API key: n8n's community
+   * edition has no API-key auth for this endpoint, only session cookies from
+   * /rest/login. Same non-secret local-only login already documented in
+   * n8n/scripts/_workflow-helpers.mjs and docs/HOW-TO-RUN.md.
+   */
+  n8nUrl: process.env.N8N_URL || "http://127.0.0.1:5678",
+  n8nAdminEmail: process.env.N8N_ADMIN_EMAIL || "operator@localhost.local",
+  n8nAdminPassword: process.env.N8N_ADMIN_PASSWORD || "LocalOnly-Pipeline2026!",
 };

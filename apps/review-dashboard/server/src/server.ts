@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { getJobDetail, listJobsAwaitingReview } from "./jobs.js";
 import { RESOLUTION_PRESET_IDS, startManualJob } from "./newJob.js";
 import { notifyApproval } from "./n8nWebhook.js";
+import { getAutoModeStatus, setAutoModeActive } from "./n8nAdmin.js";
 import { patchReviewState, removeClipOverride, setReviewStatus, upsertClipOverride } from "./reviewState.js";
 import { listThemeCatalog } from "./themes.js";
 import { listVoiceCatalog, voiceSamplePath } from "./voices.js";
@@ -55,6 +56,26 @@ export function buildServer(store: JobStore): FastifyInstance {
   });
 
   app.get("/api/themes", async () => ({ themes: listThemeCatalog() }));
+
+  app.get("/api/auto-mode", async (_request, reply) => {
+    try {
+      return await getAutoModeStatus();
+    } catch (err) {
+      return reply.code(502).send({ error: `Could not reach n8n: ${(err as Error).message}` });
+    }
+  });
+
+  app.post("/api/auto-mode", async (request, reply) => {
+    const parsed = z.object({ active: z.boolean() }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.message });
+    }
+    try {
+      return await setAutoModeActive(parsed.data.active);
+    } catch (err) {
+      return reply.code(502).send({ error: `Could not reach n8n: ${(err as Error).message}` });
+    }
+  });
 
   app.get("/api/render-capability", async () => ({
     // Whether a real GCE render VM is configured — 4K works either way, but

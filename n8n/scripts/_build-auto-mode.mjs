@@ -29,6 +29,24 @@ function buildWorkflow() {
     position: [0, 0],
   });
 
+  // 1b. Catch-up webhook — n8n's own schedule trigger only fires if n8n is
+  // actually running at 06:00; if the PC was off, that day is silently lost.
+  // check-auto-mode-catchup.mts (run by start-pipeline.bat on every startup)
+  // POSTs here when it detects a missed run past the scheduled hour. Same
+  // dual-trigger pattern manual-mode.json already uses (form + webhook both
+  // feeding the same downstream flow). Path deliberately distinct from every
+  // other webhook in this project (manual-mode-start[-api], release-on-
+  // approval) so activating this workflow can't collide with those.
+  nodes.push({
+    parameters: { httpMethod: "POST", path: "auto-mode-catchup", responseMode: "onReceived", options: {} },
+    id: id(1, 6),
+    name: "Catch-up webhook",
+    type: "n8n-nodes-base.webhook",
+    typeVersion: 2,
+    position: [0, 160],
+    webhookId: "auto-mode-catchup",
+  });
+
   // 2. Job Context — no topic/angle/sources yet, unlike manual mode's Form:
   // trend-research is what discovers and writes those.
   nodes.push({
@@ -50,6 +68,22 @@ function buildWorkflow() {
     position: [220, 0],
   });
   connect("Daily schedule", "Job Context");
+  connect("Catch-up webhook", "Job Context");
+
+  // 2b. Record today as run — read by check-auto-mode-catchup.mts so a day
+  // that already ran (via either trigger) is never double-triggered, and a
+  // day that hasn't run yet (PC was off at 06:00) gets caught later. Must
+  // run for BOTH trigger paths, so it sits right after Job Context rather
+  // than being duplicated per-trigger.
+  nodes.push({
+    parameters: { command: `=${CD} && npx tsx n8n/scripts/mark-auto-mode-run.mts` },
+    id: id(1, 7),
+    name: "Mark auto-mode run",
+    type: "n8n-nodes-base.executeCommand",
+    typeVersion: 1,
+    position: [330, 0],
+  });
+  connect("Job Context", "Mark auto-mode run");
 
   // 3. Create job.json (currentStep: trend-research, mode: auto)
   const codeId = id(1, 3);
@@ -65,7 +99,7 @@ function buildWorkflow() {
     typeVersion: 2,
     position: [440, 0],
   });
-  connect("Job Context", "Build: trend-research");
+  connect("Mark auto-mode run", "Build: trend-research");
 
   nodes.push({
     parameters: { command: `=${CD} && npx tsx n8n/scripts/update-job.mts "{{ $json.updateJobB64 }}"` },

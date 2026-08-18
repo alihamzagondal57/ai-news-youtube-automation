@@ -135,4 +135,7 @@ export const api = {
     request<{ jobId: string }>("/jobs", { method: "POST", body: JSON.stringify(input) }),
 
   getJobStatus: (jobId: string) => request<JobManifest>(`/jobs/${jobId}/status`),
+
+  getAutoModeStatus: () => request<{ active: boolean }>("/auto-mode"),
+  setAutoModeActive: (active: boolean) => request<{ active: boolean }>("/auto-mode", { method: "POST", body: JSON.stringify({ active }) }),
 };

@@ -67,6 +67,15 @@ goto WAIT_N8N
 echo       n8n is up.
 echo.
 
+REM --- Auto-mode catch-up: n8n's daily 6am trigger only fires if n8n was
+REM     actually running at 6am. If this computer was off then, that day's
+REM     automatic video would otherwise be silently skipped -- this check
+REM     (safe to run every time, no-ops if today already ran) catches it up
+REM     instead. Never blocks the rest of this script even if it fails.
+echo Checking whether today's automatic video was missed...
+npx tsx n8n/scripts/check-auto-mode-catchup.mts
+echo.
+
 REM --- 2) review-dashboard server (the backend / API) ---
 call :PORT_OPEN 4000
 if %errorlevel%==0 (
