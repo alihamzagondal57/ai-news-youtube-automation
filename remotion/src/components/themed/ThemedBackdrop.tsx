@@ -1,7 +1,8 @@
 import React from "react";
-import { AbsoluteFill, Img, OffthreadVideo, Sequence, staticFile } from "remotion";
+import { AbsoluteFill, Sequence, staticFile } from "remotion";
 import type { Theme } from "@ai-news/shared/theme";
 import type { MediaClipProps } from "../../types/newsVideoProps";
+import { KenBurnsMedia } from "../media/KenBurnsMedia";
 
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|avif)$/i;
 
@@ -42,18 +43,18 @@ export const ThemedBackdrop: React.FC<ThemedBackdropProps> = ({ theme, media = [
           <Sequence key={`${clip.src}-${i}`} from={clip.startFrame} durationInFrames={clip.durationInFrames} layout="none">
             {/* Stock sources return stills as well as clips; OffthreadVideo can't
                 render a still, so dispatch on extension. Stills have no trim
-                concept — they simply hold for the beat's full duration. */}
-            {IMAGE_EXTENSIONS.test(clip.src) ? (
-              <Img src={resolve(clip.src)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            ) : (
-              <OffthreadVideo
-                src={resolve(clip.src)}
-                muted
-                trimBefore={clip.trimBeforeFrames}
-                trimAfter={clip.trimAfterFrames}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            )}
+                concept — they simply hold for the beat's full duration. Ken
+                Burns needs a real per-clip seed so consecutive beats don't
+                all zoom/pan identically; the clip's own index is enough
+                (deterministic, and every clip already has a distinct one). */}
+            <KenBurnsMedia
+              src={resolve(clip.src)}
+              isImage={IMAGE_EXTENSIONS.test(clip.src)}
+              durationInFrames={clip.durationInFrames}
+              trimBeforeFrames={clip.trimBeforeFrames}
+              trimAfterFrames={clip.trimAfterFrames}
+              seed={i}
+            />
           </Sequence>
         ))
       ) : (
