@@ -140,15 +140,19 @@ export const PROVIDER_CATALOG: readonly ProviderDefinition[] = [
     rank: 5,
     envKey: "CEREBRAS_API_KEY",
     modelEnvKey: "SCRIPT_CEREBRAS_MODEL",
-    // Cerebras serves exactly three chat models (queried live): zai-glm-4.7,
-    // gpt-oss-120b, gemma-4-31b. GLM-4.7 is the strongest for long-form prose.
-    // Deliberately NOT llama-3.3-70b (not offered here anyway), which failed the
-    // length bar on Groq.
-    defaultModel: "zai-glm-4.7",
+    // RE-QUERIED LIVE (2026-08-19): zai-glm-4.7, the model this used to default
+    // to, now 404s -- GET /v1/models confirms Cerebras serves only two chat
+    // models today, gemma-4-31b and gpt-oss-120b (found investigating a real
+    // trend-research failure that fell all the way through to this
+    // last-resort provider and hit that 404). gpt-oss-120b over gemma-4-31b:
+    // it's the same model Groq serves and is already proven for long-form
+    // prose in this codebase (see the groq entry below and generate.ts's
+    // two-phase rewrite) -- not a fresh, unverified pick.
+    defaultModel: "gpt-oss-120b",
     maxOutputTokens: 8000,
     cost: "Free, ~1M tokens/day",
     howToGetKey: "https://cloud.cerebras.ai — sign up, then API Keys > Create. No credit card.",
-    notes: "Serves 3 models (zai-glm-4.7, gpt-oss-120b, gemma-4-31b); GLM-4.7 chosen for long-form.",
+    notes: "Serves 2 models as of 2026-08-19 (gemma-4-31b, gpt-oss-120b) -- zai-glm-4.7 has been retired.",
     productionUse: "prototype-only",
     create: (apiKey, model) =>
       new OpenAICompatibleProvider({ name: "cerebras", apiKey, baseURL: "https://api.cerebras.ai/v1", model, maxTokens: 8000 }),
